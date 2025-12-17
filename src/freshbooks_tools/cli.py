@@ -1,0 +1,637 @@
+"""CLI entry point for FreshBooks tools."""
+
+import csv
+import sys
+from datetime import datetime
+from decimal import Decimal
+from io import StringIO
+from typing import Optional
+
+import click
+from rich.console import Console
+
+from .api.client import FreshBooksClient
+from .api.invoices import InvoicesAPI
+from .api.rates import RatesAPI
+from .api.team import TeamAPI
+from .api.time_entries import TimeEntriesAPI
+from .auth import start_oauth_flow
+from .config import (
+    delete_tokens,
+    load_account_info,
+    load_config,
+    load_tokens,
+)
+from .ui.invoice_browser import run_invoice_browser
+from .ui.tables import InvoiceTable, TimeEntryRow, TimeEntryTable
+
+console = Console()
+
+
+def parse_month(month_str: str) -> tuple[int, int]:
+    """Parse month string in YYYY-MM format."""
+    try:
+        parts = month_str.split("-")
+        year = int(parts[0])
+        month = int(parts[1])
+        if not (1 <= month <= 12):
+            raise ValueError("Month must be between 1 and 12")
+        return year, month
+    except (IndexError, ValueError) as e:
+        raise click.BadParameter(f"Invalid month format. Use YYYY-MM (e.g., 2024-01): {e}")
+
+
+@click.group()
+@click.version_option()
+def cli():
+    """FreshBooks CLI tools for time entries and invoices."""
+    pass
+
+
+@cli.group()
+def auth():
+    """Authentication commands."""
+    pass
+
+
+@auth.command("login")
+def auth_login():
+    """Start OAuth login flow.
+
+    Requires FRESHBOOKS_REDIRECT_URI in .env for ngrok setup.
+    """
+    try:
+        config = load_config()
+        console.print("[bold]Starting FreshBooks OAuth login...[/bold]")
+        console.print()
+
+        is_default_uri = config.redirect_uri == "http://localhost:8374/callback"
+        if is_default_uri:
+            console.print("[yellow]Note: FreshBooks requires HTTPS for redirect URIs.[/yellow]")
+            console.print()
+            console.print("To authenticate, you need to use ngrok:")
+            console.print("  1. Run: [cyan]ngrok http 8374[/cyan]")
+            console.print("  2. Copy the https URL (e.g., https://abc123.ngrok.io)")
+            console.print("  3. Add to .env: [cyan]FRESHBOOKS_REDIRECT_URI=https://abc123.ngrok.io/callback[/cyan]")
+            console.print("  4. Add the same URL to your FreshBooks app in Developer Portal")
+            console.print("  5. Re-run: [cyan]fb auth login[/cyan]")
+            console.print()
+            sys.exit(1)
+
+        console.print("[dim]Redirect URI configured:[/dim]")
+        console.print(f"[cyan]{config.redirect_uri}[/cyan]")
+        console.print()
+        console.print("[dim]Make sure this URI is added to your FreshBooks app in the Developer Portal.[/dim]")
+        console.print()
+
+        start_oauth_flow(config)
+
+        with FreshBooksClient(config) as client:
+            client.ensure_account_info()
+            console.print("[green]Account info cached successfully![/green]")
+
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Authentication failed:[/red] {e}")
+        sys.exit(1)
+
+
+@auth.command("status")
+def auth_status():
+    """Show current authentication status."""
+    tokens = load_tokens()
+    account_id, business_id = load_account_info()
+
+    if tokens:
+        console.print("[green]Authenticated[/green]")
+        console.print(f"  Token expires: {tokens.expires_at or 'Unknown'}")
+        console.print(f"  Account ID: {account_id or 'Not cached'}")
+        console.print(f"  Business ID: {business_id or 'Not cached'}")
+
+        if tokens.is_expired:
+            console.print("[yellow]  Token is expired - will be refreshed on next request[/yellow]")
+    else:
+        console.print("[red]Not authenticated[/red]")
+        console.print("Run 'fb auth login' to authenticate.")
+
+
+@auth.command("logout")
+def auth_logout():
+    """Clear stored authentication tokens."""
+    delete_tokens()
+    console.print("[green]Logged out successfully.[/green]")
+
+
+@cli.group()
+def time():
+    """Time entry commands."""
+    pass
+
+
+@time.command("list")
+@click.option("--teammate", "-t", help="Filter by teammate name (partial match)")
+@click.option("--month", "-m", help="Filter by month (YYYY-MM format)")
+@click.option("--billable/--all", default=True, help="Show only billable entries (default) or all")
+@click.option("--show-notes", is_flag=True, help="Show entry notes")
+@click.option("--no-rates", is_flag=True, help="Hide rate columns")
+def time_list(teammate: Optional[str], month: Optional[str], billable: bool, show_notes: bool, no_rates: bool):
+    """List time entries with optional filters."""
+    try:
+        config = load_config()
+
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run 'fb auth login' first.[/red]")
+            sys.exit(1)
+
+        with FreshBooksClient(config) as client:
+            time_api = TimeEntriesAPI(client)
+            team_api = TeamAPI(client)
+            rates_api = RatesAPI(client, team_api, config.rates)
+            invoices_api = InvoicesAPI(client)
+
+            identity_id = None
+            if teammate:
+                identity_id = team_api.find_identity_by_name(teammate)
+                if identity_id is None:
+                    console.print(f"[red]No teammate found matching '{teammate}'[/red]")
+                    sys.exit(1)
+
+            if month:
+                year, mon = parse_month(month)
+                entries = time_api.list_by_month(
+                    year, mon,
+                    identity_id=identity_id,
+                    billable=billable if billable else None,
+                )
+                title = f"Time Entries - {year}-{mon:02d}"
+            else:
+                entries, _ = time_api.list(
+                    identity_id=identity_id,
+                    billable=billable if billable else None,
+                    per_page=100,
+                )
+                title = "Time Entries"
+
+            if teammate:
+                title += f" - {teammate}"
+
+            rows = []
+            for entry in entries:
+                teammate_name = team_api.get_team_member_name(entry.identity_id)
+                client_name = invoices_api.get_client_name(entry.client_id) if entry.client_id else "-"
+                project_name = f"Project {entry.project_id}" if entry.project_id else "-"
+                service_name = rates_api.get_service_name(entry.service_id) if entry.service_id else "-"
+
+                billable_rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id) if entry.billable else None
+                cost_rate = rates_api.get_cost_rate(entry.identity_id)
+
+                rows.append(TimeEntryRow(
+                    date=entry.started_at.strftime("%Y-%m-%d"),
+                    teammate=teammate_name,
+                    client=client_name,
+                    project=project_name,
+                    service=service_name,
+                    hours=entry.hours,
+                    billable_rate=billable_rate,
+                    cost_rate=cost_rate,
+                    note=entry.note or "",
+                ))
+
+            if not rows:
+                console.print("[yellow]No time entries found.[/yellow]")
+                return
+
+            table = TimeEntryTable(console)
+            table.print_table(rows, title=title, show_rates=not no_rates, show_notes=show_notes)
+
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+
+@time.command("summary")
+@click.option("--month", "-m", required=True, help="Month to summarize (YYYY-MM format)")
+@click.option("--by-teammate", is_flag=True, help="Group by teammate")
+@click.option("--by-client", is_flag=True, help="Group by client")
+def time_summary(month: str, by_teammate: bool, by_client: bool):
+    """Show time entry summary for a month."""
+    try:
+        config = load_config()
+
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run 'fb auth login' first.[/red]")
+            sys.exit(1)
+
+        year, mon = parse_month(month)
+
+        with FreshBooksClient(config) as client:
+            time_api = TimeEntriesAPI(client)
+            team_api = TeamAPI(client)
+            rates_api = RatesAPI(client, team_api, config.rates)
+            invoices_api = InvoicesAPI(client)
+
+            entries = time_api.list_by_month(year, mon)
+
+            if not entries:
+                console.print(f"[yellow]No time entries found for {year}-{mon:02d}.[/yellow]")
+                return
+
+            if by_teammate:
+                groups: dict[str, list] = {}
+                for entry in entries:
+                    name = team_api.get_team_member_name(entry.identity_id)
+                    if name not in groups:
+                        groups[name] = []
+                    groups[name].append(entry)
+
+                console.print(f"\n[bold]Time Summary by Teammate - {year}-{mon:02d}[/bold]\n")
+
+                for name, group_entries in sorted(groups.items()):
+                    total_hours = sum(e.hours for e in group_entries)
+                    total_billable = Decimal("0")
+                    total_cost = Decimal("0")
+
+                    for entry in group_entries:
+                        if entry.billable:
+                            rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id)
+                            if rate:
+                                total_billable += entry.hours * rate
+                        cost_rate = rates_api.get_cost_rate(entry.identity_id)
+                        if cost_rate:
+                            total_cost += entry.hours * cost_rate
+
+                    console.print(f"[green]{name}[/green]")
+                    console.print(f"  Hours: [magenta]{total_hours:.2f}[/magenta]")
+                    console.print(f"  Billable: [green]${total_billable:.2f}[/green]")
+                    console.print(f"  Cost: [red]${total_cost:.2f}[/red]")
+                    profit = total_billable - total_cost
+                    console.print(f"  Profit: [{'green' if profit >= 0 else 'red'}]${profit:.2f}[/{'green' if profit >= 0 else 'red'}]")
+                    console.print()
+
+            elif by_client:
+                groups: dict[str, list] = {}
+                for entry in entries:
+                    name = invoices_api.get_client_name(entry.client_id) if entry.client_id else "No Client"
+                    if name not in groups:
+                        groups[name] = []
+                    groups[name].append(entry)
+
+                console.print(f"\n[bold]Time Summary by Client - {year}-{mon:02d}[/bold]\n")
+
+                for name, group_entries in sorted(groups.items()):
+                    total_hours = sum(e.hours for e in group_entries)
+                    total_billable = Decimal("0")
+
+                    for entry in group_entries:
+                        if entry.billable:
+                            rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id)
+                            if rate:
+                                total_billable += entry.hours * rate
+
+                    console.print(f"[yellow]{name}[/yellow]")
+                    console.print(f"  Hours: [magenta]{total_hours:.2f}[/magenta]")
+                    console.print(f"  Billable: [green]${total_billable:.2f}[/green]")
+                    console.print()
+
+            else:
+                total_hours = sum(e.hours for e in entries)
+                total_billable = Decimal("0")
+                total_cost = Decimal("0")
+
+                for entry in entries:
+                    if entry.billable:
+                        rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id)
+                        if rate:
+                            total_billable += entry.hours * rate
+                    cost_rate = rates_api.get_cost_rate(entry.identity_id)
+                    if cost_rate:
+                        total_cost += entry.hours * cost_rate
+
+                console.print(f"\n[bold]Time Summary - {year}-{mon:02d}[/bold]\n")
+                console.print(f"Total Entries: {len(entries)}")
+                console.print(f"Total Hours: [magenta]{total_hours:.2f}[/magenta]")
+                console.print(f"Total Billable: [green]${total_billable:.2f}[/green]")
+                console.print(f"Total Cost: [red]${total_cost:.2f}[/red]")
+                profit = total_billable - total_cost
+                margin = (profit / total_billable * 100) if total_billable else Decimal("0")
+                console.print(f"Profit: [{'green' if profit >= 0 else 'red'}]${profit:.2f}[/{'green' if profit >= 0 else 'red'}]")
+                console.print(f"Margin: [{'green' if margin >= 0 else 'red'}]{margin:.1f}%[/{'green' if margin >= 0 else 'red'}]")
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+
+@time.command("export")
+@click.option("--month", "-m", required=True, help="Month to export (YYYY-MM format)")
+@click.option("--format", "-f", "fmt", type=click.Choice(["csv"]), default="csv", help="Export format")
+@click.option("--output", "-o", help="Output file (default: stdout)")
+def time_export(month: str, fmt: str, output: Optional[str]):
+    """Export time entries to CSV."""
+    try:
+        config = load_config()
+
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run 'fb auth login' first.[/red]", err=True)
+            sys.exit(1)
+
+        year, mon = parse_month(month)
+
+        with FreshBooksClient(config) as client:
+            time_api = TimeEntriesAPI(client)
+            team_api = TeamAPI(client)
+            rates_api = RatesAPI(client, team_api, config.rates)
+            invoices_api = InvoicesAPI(client)
+
+            entries = time_api.list_by_month(year, mon)
+
+            if not entries:
+                console.print(f"[yellow]No time entries found for {year}-{mon:02d}.[/yellow]", err=True)
+                return
+
+            buffer = StringIO()
+            writer = csv.writer(buffer)
+            writer.writerow([
+                "Date", "Teammate", "Client", "Project", "Service",
+                "Hours", "Billable Rate", "Cost Rate", "Billable Amount", "Cost Amount", "Note"
+            ])
+
+            for entry in entries:
+                teammate_name = team_api.get_team_member_name(entry.identity_id)
+                client_name = invoices_api.get_client_name(entry.client_id) if entry.client_id else ""
+                project_name = f"Project {entry.project_id}" if entry.project_id else ""
+                service_name = rates_api.get_service_name(entry.service_id) if entry.service_id else ""
+
+                billable_rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id) if entry.billable else None
+                cost_rate = rates_api.get_cost_rate(entry.identity_id)
+
+                billable_amount = entry.hours * billable_rate if billable_rate else None
+                cost_amount = entry.hours * cost_rate if cost_rate else None
+
+                writer.writerow([
+                    entry.started_at.strftime("%Y-%m-%d"),
+                    teammate_name,
+                    client_name,
+                    project_name,
+                    service_name,
+                    f"{entry.hours:.2f}",
+                    f"{billable_rate:.2f}" if billable_rate else "",
+                    f"{cost_rate:.2f}" if cost_rate else "",
+                    f"{billable_amount:.2f}" if billable_amount else "",
+                    f"{cost_amount:.2f}" if cost_amount else "",
+                    entry.note or "",
+                ])
+
+            if output:
+                with open(output, "w") as f:
+                    f.write(buffer.getvalue())
+                console.print(f"[green]Exported to {output}[/green]", err=True)
+            else:
+                print(buffer.getvalue())
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}", err=True)
+        sys.exit(1)
+
+
+@cli.group()
+def invoices():
+    """Invoice commands."""
+    pass
+
+
+@invoices.command("browse")
+def invoices_browse():
+    """Launch interactive invoice browser."""
+    try:
+        config = load_config()
+
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run 'fb auth login' first.[/red]")
+            sys.exit(1)
+
+        run_invoice_browser(config)
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+
+@invoices.command("list")
+@click.option("--client", "-c", help="Filter by client name (partial match)")
+@click.option("--status", "-s", type=click.Choice(["draft", "sent", "viewed", "paid", "partial", "overdue"]), help="Filter by status")
+@click.option("--limit", "-l", default=50, help="Maximum number of invoices to show")
+def invoices_list(client: Optional[str], status: Optional[str], limit: int):
+    """List invoices (non-interactive)."""
+    try:
+        config = load_config()
+
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run 'fb auth login' first.[/red]")
+            sys.exit(1)
+
+        with FreshBooksClient(config) as fb_client:
+            invoices_api = InvoicesAPI(fb_client)
+
+            customer_id = None
+            if client:
+                clients = invoices_api.list_clients()
+                matching = [c for c in clients if client.lower() in c.display_name.lower()]
+                if not matching:
+                    console.print(f"[red]No client found matching '{client}'[/red]")
+                    sys.exit(1)
+                if len(matching) > 1:
+                    console.print(f"[yellow]Multiple clients match '{client}':[/yellow]")
+                    for c in matching:
+                        console.print(f"  - {c.display_name}")
+                    sys.exit(1)
+                customer_id = matching[0].id
+
+            all_invoices = invoices_api.list_all_invoices(
+                customer_id=customer_id,
+                status=status,
+            )
+
+            all_invoices = sorted(all_invoices, key=lambda i: i.create_date, reverse=True)[:limit]
+
+            if not all_invoices:
+                console.print("[yellow]No invoices found.[/yellow]")
+                return
+
+            title = "Invoices"
+            if client:
+                title += f" - {client}"
+            if status:
+                title += f" ({status})"
+
+            table = InvoiceTable(console)
+            table.print_table(all_invoices, title=title)
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+
+@invoices.command("show")
+@click.argument("invoice_number")
+def invoices_show(invoice_number: str):
+    """Show details for a specific invoice."""
+    try:
+        config = load_config()
+
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run 'fb auth login' first.[/red]")
+            sys.exit(1)
+
+        with FreshBooksClient(config) as fb_client:
+            invoices_api = InvoicesAPI(fb_client)
+
+            all_invoices = invoices_api.list_all_invoices(include_lines=True, include_payments=True)
+
+            invoice = None
+            for inv in all_invoices:
+                if inv.invoice_number == invoice_number or str(inv.id) == invoice_number:
+                    invoice = inv
+                    break
+
+            if not invoice:
+                console.print(f"[red]Invoice '{invoice_number}' not found.[/red]")
+                sys.exit(1)
+
+            table = InvoiceTable(console)
+            table.print_invoice_detail(invoice)
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+
+@cli.command("rates-init")
+@click.option("--output", "-o", help="Output file path (default: ~/.config/freshbooks-tools/rates.yaml)")
+def rates_init(output: Optional[str]):
+    """Generate a rates.yaml template with all team members."""
+    from .config import CONFIG_DIR, RATES_FILE, ensure_config_dir
+
+    try:
+        config = load_config()
+
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run 'fb auth login' first.[/red]")
+            sys.exit(1)
+
+        with FreshBooksClient(config) as client:
+            team_api = TeamAPI(client)
+            rates_api = RatesAPI(client, team_api, config.rates)
+
+            console.print("[dim]Fetching team members and rates...[/dim]")
+            all_members = team_api.get_all_members()
+            api_rates = rates_api.get_team_member_rates()
+
+            lines = [
+                "# FreshBooks Team Member Rates Configuration",
+                "# Generated by: fb rates-init",
+                "#",
+                "# Cost rates are what you pay your team members.",
+                "# Billable rates are what you charge clients (pulled from API if not overridden here).",
+                "#",
+                "# You can set a default rate that applies to all members without a specific rate:",
+                "# default_cost_rate: 50.00",
+                "# default_billable_rate: 150.00",
+                "",
+                "# Team members by identity_id:",
+                "members:",
+            ]
+
+            for identity_id, m in sorted(all_members.items(), key=lambda x: f"{x[1].get('first_name', '')} {x[1].get('last_name', '')}"):
+                name = f"{m.get('first_name', '')} {m.get('last_name', '')}".strip() or "Unknown"
+                email = m.get("email") or "unknown"
+                api_rate = api_rates.get(identity_id)
+
+                lines.append(f"  {identity_id}:")
+                lines.append(f"    name: \"{name}\"")
+                lines.append(f"    email: \"{email}\"")
+                lines.append(f"    cost_rate: 0.00  # TODO: Set actual cost rate")
+                if api_rate:
+                    lines.append(f"    # billable_rate: {api_rate}  # From API - uncomment to override")
+                else:
+                    lines.append(f"    billable_rate: 0.00  # TODO: Set billable rate")
+                lines.append("")
+
+            content = "\n".join(lines)
+
+            output_path = output or str(RATES_FILE)
+            if output_path == str(RATES_FILE):
+                ensure_config_dir()
+
+            with open(output_path, "w") as f:
+                f.write(content)
+
+            console.print(f"\n[green]Rates template generated:[/green] {output_path}")
+            console.print(f"\nFound {len(all_members)} team members.")
+            console.print("\n[yellow]Next steps:[/yellow]")
+            console.print("  1. Edit the file to add cost rates for each team member")
+            console.print("  2. Optionally override billable rates if needed")
+            console.print("  3. Run 'fb time list' or 'fb time summary' to see the rates applied")
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+
+@cli.command("team")
+def team_list():
+    """List team members and contractors."""
+    try:
+        config = load_config()
+
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run 'fb auth login' first.[/red]")
+            sys.exit(1)
+
+        with FreshBooksClient(config) as client:
+            team_api = TeamAPI(client)
+            rates_api = RatesAPI(client, team_api, config.rates)
+
+            console.print("\n[dim]Fetching team members from projects...[/dim]")
+            all_members = team_api.get_all_members()
+
+            console.print(f"\n[bold]Team Members & Contractors ({len(all_members)} total)[/bold]\n")
+
+            for identity_id, m in sorted(all_members.items(), key=lambda x: f"{x[1].get('first_name', '')} {x[1].get('last_name', '')}"):
+                name = f"{m.get('first_name', '')} {m.get('last_name', '')}".strip() or "Unknown"
+                status = "[green]Active[/green]" if m.get("active", True) else "[red]Inactive[/red]"
+
+                console.print(f"  [bold]{name}[/bold]")
+                console.print(f"    Email: {m.get('email') or 'N/A'}")
+                if m.get("company"):
+                    console.print(f"    Company: {m.get('company')}")
+                console.print(f"    Role: {m.get('role') or 'contractor'}")
+                console.print(f"    Identity ID: {identity_id}")
+                console.print(f"    Status: {status}")
+
+                billable_rate = rates_api.get_billable_rate(identity_id)
+                if billable_rate:
+                    console.print(f"    Billable Rate: [green]${billable_rate:.2f}/hr[/green]")
+                else:
+                    console.print(f"    Billable Rate: [dim]Not set[/dim]")
+
+                cost_rate = rates_api.get_cost_rate(identity_id)
+                if cost_rate:
+                    console.print(f"    Cost Rate: [yellow]${cost_rate:.2f}/hr[/yellow]")
+                else:
+                    console.print(f"    Cost Rate: [dim]Not configured[/dim]")
+
+                console.print()
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+
+if __name__ == "__main__":
+    cli()
