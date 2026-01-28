@@ -1,6 +1,7 @@
 """CLI entry point for FreshBooks tools."""
 
 import csv
+import json
 import sys
 from datetime import datetime
 from decimal import Decimal
@@ -136,7 +137,8 @@ def time():
 @click.option("--billable/--all", default=True, help="Show only billable entries (default) or all")
 @click.option("--show-notes", is_flag=True, help="Show entry notes")
 @click.option("--no-rates", is_flag=True, help="Hide rate columns")
-def time_list(teammate: Optional[str], month: Optional[str], billable: bool, show_notes: bool, no_rates: bool):
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def time_list(teammate: Optional[str], month: Optional[str], billable: bool, show_notes: bool, no_rates: bool, as_json: bool):
     """List time entries with optional filters."""
     try:
         config = load_config()
@@ -199,6 +201,40 @@ def time_list(teammate: Optional[str], month: Optional[str], billable: bool, sho
                     note=entry.note or "",
                 ))
 
+            if as_json:
+                total_hours = sum(r.hours for r in rows)
+                total_billable = sum(r.billable_amount or Decimal("0") for r in rows)
+                total_cost = sum(r.cost_amount or Decimal("0") for r in rows)
+                profit = total_billable - total_cost
+                margin = float(profit / total_billable * 100) if total_billable else 0.0
+                output = {
+                    "entries": [
+                        {
+                            "date": r.date,
+                            "teammate": r.teammate,
+                            "client": r.client,
+                            "project": r.project,
+                            "service": r.service,
+                            "hours": float(r.hours),
+                            "billable_rate": float(r.billable_rate) if r.billable_rate else None,
+                            "cost_rate": float(r.cost_rate) if r.cost_rate else None,
+                            "billable_amount": float(r.billable_amount) if r.billable_amount else None,
+                            "cost_amount": float(r.cost_amount) if r.cost_amount else None,
+                            "note": r.note or None,
+                        }
+                        for r in rows
+                    ],
+                    "totals": {
+                        "hours": float(total_hours),
+                        "billable": float(total_billable),
+                        "cost": float(total_cost),
+                        "profit": float(profit),
+                        "margin": margin,
+                    },
+                }
+                print(json.dumps(output, indent=2))
+                return
+
             if not rows:
                 console.print("[yellow]No time entries found.[/yellow]")
                 return
@@ -218,7 +254,8 @@ def time_list(teammate: Optional[str], month: Optional[str], billable: bool, sho
 @click.option("--month", "-m", required=True, help="Month to summarize (YYYY-MM format)")
 @click.option("--by-teammate", is_flag=True, help="Group by teammate")
 @click.option("--by-client", is_flag=True, help="Group by client")
-def time_summary(month: str, by_teammate: bool, by_client: bool):
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def time_summary(month: str, by_teammate: bool, by_client: bool, as_json: bool):
     """Show time entry summary for a month."""
     try:
         config = load_config()
@@ -238,7 +275,14 @@ def time_summary(month: str, by_teammate: bool, by_client: bool):
             entries = time_api.list_by_month(year, mon)
 
             if not entries:
-                console.print(f"[yellow]No time entries found for {year}-{mon:02d}.[/yellow]")
+                if as_json:
+                    print(json.dumps({"month": month, "total_hours": 0, "total_billable": 0, "total_cost": 0, "profit": 0, "margin": 0, "groups": {}}))
+                else:
+                    console.print(f"[yellow]No time entries found for {year}-{mon:02d}.[/yellow]")
+                return
+
+            if as_json:
+                _print_time_summary_json(entries, month, by_teammate, by_client, team_api, rates_api, invoices_api)
                 return
 
             if by_teammate:
@@ -325,6 +369,66 @@ def time_summary(month: str, by_teammate: bool, by_client: bool):
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         sys.exit(1)
+
+
+def _print_time_summary_json(entries, month, by_teammate, by_client, team_api, rates_api, invoices_api):
+    """Build and print JSON output for time summary."""
+    total_hours = float(sum(e.hours for e in entries))
+    total_billable = Decimal("0")
+    total_cost = Decimal("0")
+
+    for entry in entries:
+        if entry.billable:
+            rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id)
+            if rate:
+                total_billable += entry.hours * rate
+        cost_rate = rates_api.get_cost_rate(entry.identity_id)
+        if cost_rate:
+            total_cost += entry.hours * cost_rate
+
+    profit = total_billable - total_cost
+    margin = float(profit / total_billable * 100) if total_billable else 0.0
+
+    groups = {}
+    if by_teammate or by_client:
+        group_map: dict[str, list] = {}
+        for entry in entries:
+            if by_teammate:
+                key = team_api.get_team_member_name(entry.identity_id)
+            else:
+                key = invoices_api.get_client_name(entry.client_id) if entry.client_id else "No Client"
+            group_map.setdefault(key, []).append(entry)
+
+        for name, group_entries in sorted(group_map.items()):
+            g_hours = float(sum(e.hours for e in group_entries))
+            g_billable = Decimal("0")
+            g_cost = Decimal("0")
+            for entry in group_entries:
+                if entry.billable:
+                    rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id)
+                    if rate:
+                        g_billable += entry.hours * rate
+                cr = rates_api.get_cost_rate(entry.identity_id)
+                if cr:
+                    g_cost += entry.hours * cr
+            g_profit = g_billable - g_cost
+            groups[name] = {
+                "hours": g_hours,
+                "billable": float(g_billable),
+                "cost": float(g_cost),
+                "profit": float(g_profit),
+            }
+
+    output = {
+        "month": month,
+        "total_hours": total_hours,
+        "total_billable": float(total_billable),
+        "total_cost": float(total_cost),
+        "profit": float(profit),
+        "margin": margin,
+        "groups": groups,
+    }
+    print(json.dumps(output, indent=2))
 
 
 @time.command("export")
@@ -426,7 +530,8 @@ def invoices_browse():
 @click.option("--client", "-c", help="Filter by client name (partial match)")
 @click.option("--status", "-s", type=click.Choice(["draft", "sent", "viewed", "paid", "partial", "overdue"]), help="Filter by status")
 @click.option("--limit", "-l", default=50, help="Maximum number of invoices to show")
-def invoices_list(client: Optional[str], status: Optional[str], limit: int):
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def invoices_list(client: Optional[str], status: Optional[str], limit: int, as_json: bool):
     """List invoices (non-interactive)."""
     try:
         config = load_config()
@@ -459,6 +564,35 @@ def invoices_list(client: Optional[str], status: Optional[str], limit: int):
 
             all_invoices = sorted(all_invoices, key=lambda i: i.create_date, reverse=True)[:limit]
 
+            if as_json:
+                total_amount = sum(i.amount or Decimal("0") for i in all_invoices)
+                total_paid = sum(i.paid or Decimal("0") for i in all_invoices)
+                total_outstanding = sum(i.outstanding or Decimal("0") for i in all_invoices)
+                output = {
+                    "invoices": [
+                        {
+                            "id": inv.id,
+                            "invoice_number": inv.invoice_number,
+                            "client": inv.client_name,
+                            "create_date": inv.create_date,
+                            "due_date": inv.due_date,
+                            "status": inv.display_status,
+                            "currency": inv.currency_code,
+                            "amount": float(inv.amount) if inv.amount else None,
+                            "paid": float(inv.paid) if inv.paid else None,
+                            "outstanding": float(inv.outstanding) if inv.outstanding else None,
+                        }
+                        for inv in all_invoices
+                    ],
+                    "totals": {
+                        "amount": float(total_amount),
+                        "paid": float(total_paid),
+                        "outstanding": float(total_outstanding),
+                    },
+                }
+                print(json.dumps(output, indent=2))
+                return
+
             if not all_invoices:
                 console.print("[yellow]No invoices found.[/yellow]")
                 return
@@ -479,7 +613,8 @@ def invoices_list(client: Optional[str], status: Optional[str], limit: int):
 
 @invoices.command("show")
 @click.argument("invoice_number")
-def invoices_show(invoice_number: str):
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def invoices_show(invoice_number: str, as_json: bool):
     """Show details for a specific invoice."""
     try:
         config = load_config()
@@ -500,8 +635,52 @@ def invoices_show(invoice_number: str):
                     break
 
             if not invoice:
-                console.print(f"[red]Invoice '{invoice_number}' not found.[/red]")
+                if as_json:
+                    print(json.dumps({"error": f"Invoice '{invoice_number}' not found"}))
+                else:
+                    console.print(f"[red]Invoice '{invoice_number}' not found.[/red]")
                 sys.exit(1)
+
+            if as_json:
+                output = {
+                    "invoice": {
+                        "id": invoice.id,
+                        "invoice_number": invoice.invoice_number,
+                        "client": invoice.client_name,
+                        "create_date": invoice.create_date,
+                        "due_date": invoice.due_date,
+                        "status": invoice.display_status,
+                        "currency": invoice.currency_code,
+                        "amount": float(invoice.amount) if invoice.amount else None,
+                        "paid": float(invoice.paid) if invoice.paid else None,
+                        "outstanding": float(invoice.outstanding) if invoice.outstanding else None,
+                        "discount": float(invoice.discount_value) if invoice.discount_value else None,
+                        "lines": [
+                            {
+                                "name": line.name,
+                                "description": line.description,
+                                "qty": float(line.qty) if line.qty else None,
+                                "unit_cost": float(line.unit_cost) if line.unit_cost else None,
+                                "amount": float(line.amount) if line.amount else None,
+                                "type": line.type,
+                            }
+                            for line in (invoice.lines or [])
+                        ],
+                        "payments": [
+                            {
+                                "id": p.id,
+                                "amount": float(p.amount) if p.amount else None,
+                                "date": p.date,
+                                "type": p.type,
+                                "note": p.note,
+                                "gateway": p.gateway,
+                            }
+                            for p in (invoice.payments or [])
+                        ],
+                    }
+                }
+                print(json.dumps(output, indent=2))
+                return
 
             table = InvoiceTable(console)
             table.print_invoice_detail(invoice)
@@ -584,7 +763,8 @@ def rates_init(output: Optional[str]):
 
 
 @cli.command("team")
-def team_list():
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def team_list(as_json: bool):
     """List team members and contractors."""
     try:
         config = load_config()
@@ -597,8 +777,28 @@ def team_list():
             team_api = TeamAPI(client)
             rates_api = RatesAPI(client, team_api, config.rates)
 
-            console.print("\n[dim]Fetching team members from projects...[/dim]")
             all_members = team_api.get_all_members()
+
+            if as_json:
+                members_list = []
+                for identity_id, m in sorted(all_members.items(), key=lambda x: f"{x[1].get('first_name', '')} {x[1].get('last_name', '')}"):
+                    name = f"{m.get('first_name', '')} {m.get('last_name', '')}".strip() or "Unknown"
+                    billable_rate = rates_api.get_billable_rate(identity_id)
+                    cost_rate = rates_api.get_cost_rate(identity_id)
+                    members_list.append({
+                        "identity_id": identity_id,
+                        "name": name,
+                        "email": m.get("email"),
+                        "company": m.get("company"),
+                        "role": m.get("role") or "contractor",
+                        "active": m.get("active", True),
+                        "billable_rate": float(billable_rate) if billable_rate else None,
+                        "cost_rate": float(cost_rate) if cost_rate else None,
+                    })
+                print(json.dumps({"members": members_list}, indent=2))
+                return
+
+            console.print("\n[dim]Fetching team members from projects...[/dim]")
 
             console.print(f"\n[bold]Team Members & Contractors ({len(all_members)} total)[/bold]\n")
 

@@ -174,7 +174,7 @@ def start_oauth_flow(config: Config, local_port: int = 8374) -> Tokens:
         console.print()
 
     socketserver.TCPServer.allow_reuse_address = True
-    server = socketserver.TCPServer(("", port), OAuthCallbackHandler)
+    server = socketserver.TCPServer(("127.0.0.1", port), OAuthCallbackHandler)
     server.timeout = 120
 
     server_thread = threading.Thread(target=server.handle_request)

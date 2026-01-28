@@ -117,13 +117,25 @@ class Config:
 
 
 def ensure_config_dir() -> None:
-    """Ensure the configuration directory exists."""
+    """Ensure the configuration directory exists with restricted permissions."""
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(CONFIG_DIR, 0o700)
+
+
+def _write_secure_json(path: Path, data: dict) -> None:
+    """Write JSON to a file with owner-only permissions (0600)."""
+    with open(path, "w") as f:
+        json.dump(data, f, indent=2)
+    os.chmod(path, 0o600)
 
 
 def load_env_config() -> tuple[str, str, str]:
     """Load client credentials and redirect URI from .env file."""
-    load_dotenv()
+    config_env = CONFIG_DIR / ".env"
+    if config_env.exists():
+        load_dotenv(config_env)
+    else:
+        load_dotenv()
 
     client_id = os.getenv("FRESHBOOKS_CLIENT_ID")
     client_secret = os.getenv("FRESHBOOKS_CLIENT_SECRET")
@@ -153,8 +165,7 @@ def load_tokens() -> Optional[Tokens]:
 def save_tokens(tokens: Tokens) -> None:
     """Save tokens to config directory."""
     ensure_config_dir()
-    with open(TOKENS_FILE, "w") as f:
-        json.dump(tokens.to_dict(), f, indent=2)
+    _write_secure_json(TOKENS_FILE, tokens.to_dict())
 
 
 def delete_tokens() -> None:
@@ -252,8 +263,7 @@ def save_account_info(account_id: str, business_id: int) -> None:
     """Save account and business IDs to config."""
     ensure_config_dir()
     account_file = CONFIG_DIR / "account.json"
-    with open(account_file, "w") as f:
-        json.dump({"account_id": account_id, "business_id": business_id}, f, indent=2)
+    _write_secure_json(account_file, {"account_id": account_id, "business_id": business_id})
 
 
 def load_account_info() -> tuple[Optional[str], Optional[int]]:
