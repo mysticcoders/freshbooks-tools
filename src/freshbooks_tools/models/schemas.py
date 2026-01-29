@@ -247,3 +247,34 @@ class Project(BaseModel):
             billable=data.get("billable", True),
             internal=data.get("internal", False),
         )
+
+
+class AmountWithCurrency(BaseModel):
+    """Currency amount as returned by FreshBooks API."""
+
+    amount: Decimal
+    code: str
+
+
+class AgingBucket(BaseModel):
+    """AR aging bucket totals."""
+
+    current: AmountWithCurrency = Field(alias="0-30")
+    days_30: AmountWithCurrency = Field(alias="31-60")
+    days_60: AmountWithCurrency = Field(alias="61-90")
+    days_90_plus: AmountWithCurrency = Field(alias="91+")
+    total: AmountWithCurrency
+
+    class Config:
+        populate_by_name = True
+
+
+class AccountAgingReport(BaseModel):
+    """AR aging report response from FreshBooks API."""
+
+    end_date: str
+    company_name: str
+    currency_code: str
+    totals: AgingBucket
+    accounts: list[dict]
+    download_token: Optional[str] = None
