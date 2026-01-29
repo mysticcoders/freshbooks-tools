@@ -2,6 +2,7 @@
 
 from dataclasses import dataclass
 from decimal import Decimal
+from difflib import get_close_matches
 from typing import Optional
 
 from rich.console import Console
@@ -469,3 +470,104 @@ class ARAgingTable:
         self.console.print()
         self.console.print(f"[dim]Report date: {report.end_date}[/dim]")
         self.console.print(f"[dim]Currency: {report.currency_code}[/dim]")
+
+
+class ClientARFormatter:
+    """Rich formatter for client-specific AR output."""
+
+    def __init__(self, console: Optional[Console] = None):
+        self.console = console or Console()
+        self.AGING_COLORS = ARAgingTable.AGING_COLORS
+
+    def find_client_by_id(self, accounts: list[dict], client_id: int) -> Optional[dict]:
+        """Find client in accounts array by userid field."""
+        for account in accounts:
+            if account.get("userid") == client_id:
+                return account
+        return None
+
+    def find_client_by_name(self, accounts: list[dict], search_name: str) -> tuple[Optional[dict], Optional[str]]:
+        """Find client by fuzzy name match."""
+        name_to_account = {}
+        for account in accounts:
+            client_name = self.get_client_name_from_account(account)
+            name_to_account[client_name] = account
+
+        matches = get_close_matches(search_name, name_to_account.keys(), n=1, cutoff=0.6)
+
+        if matches:
+            matched_name = matches[0]
+            return name_to_account[matched_name], matched_name
+
+        return None, None
+
+    def get_client_name_from_account(self, account: dict) -> str:
+        """Extract name from organization or fname/lname."""
+        if account.get("organization"):
+            return account["organization"]
+        fname = account.get("fname", "")
+        lname = account.get("lname", "")
+        name = f"{fname} {lname}".strip()
+        return name if name else "Unknown Client"
+
+    def _get_bucket_amount(self, account: dict, bucket_key: str) -> Decimal:
+        """Get amount for a specific aging bucket from account data."""
+        if bucket_key in account:
+            bucket_data = account[bucket_key]
+            if isinstance(bucket_data, dict) and "amount" in bucket_data:
+                return Decimal(str(bucket_data["amount"]))
+            return Decimal(str(bucket_data))
+        return Decimal("0")
+
+    def get_worst_bucket(self, account: dict) -> str:
+        """Return bucket key for oldest non-zero balance."""
+        buckets_order = [
+            ("91+", "days_90_plus"),
+            ("61-90", "days_60"),
+            ("31-60", "days_30"),
+            ("0-30", "current"),
+        ]
+
+        for bucket_key, color_key in buckets_order:
+            amount = self._get_bucket_amount(account, bucket_key)
+            if amount > 0:
+                return color_key
+
+        return "current"
+
+    def print_compact(self, client_name: str, total: Decimal, worst_bucket: str, currency: str) -> None:
+        """Print one-liner with colored amount using ARAgingTable.AGING_COLORS."""
+        color = self.AGING_COLORS.get(worst_bucket, "white")
+
+        text = Text.assemble(
+            (f"{client_name}: ", "bold"),
+            (f"${total:,.2f}", color),
+            (f" outstanding ({currency})", "")
+        )
+
+        self.console.print(text)
+
+    def print_detail(self, client_name: str, account: dict, currency: str) -> None:
+        """Show total + bucket breakdown."""
+        total = self._get_bucket_amount(account, "total")
+        if "total" not in account and isinstance(account.get("total"), dict):
+            total = Decimal(str(account.get("total", {}).get("amount", 0)))
+
+        self.console.print(f"[bold]{client_name}[/bold]")
+        self.console.print(f"Total Outstanding: ${total:,.2f} {currency}")
+        self.console.print()
+        self.console.print("By Aging Bucket:")
+
+        buckets = [
+            ("  0-30 days", "0-30", "current"),
+            ("  31-60 days", "31-60", "days_30"),
+            ("  61-90 days", "61-90", "days_60"),
+            ("  91+ days", "91+", "days_90_plus"),
+        ]
+
+        for label, key, color_key in buckets:
+            amount = self._get_bucket_amount(account, key)
+            color = self.AGING_COLORS[color_key]
+            amount_text = Text(f"${amount:,.2f}", style=color)
+            self.console.print(f"{label}: ", end="")
+            self.console.print(amount_text)
