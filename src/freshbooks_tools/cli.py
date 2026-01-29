@@ -15,6 +15,7 @@ from .api.client import FreshBooksClient
 from .api.invoices import InvoicesAPI
 from .api.projects import ProjectsAPI
 from .api.rates import RatesAPI
+from .api.reports import ReportsAPI
 from .api.team import TeamAPI
 from .api.time_entries import TimeEntriesAPI
 from .auth import start_oauth_flow
@@ -936,6 +937,66 @@ def invoices_show(invoice_number: str, as_json: bool):
 
             table = InvoiceTable(console)
             table.print_invoice_detail(invoice)
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+
+@cli.group()
+def reports():
+    """Financial reporting commands."""
+    pass
+
+
+@reports.command("ar-aging")
+@click.option("--start-date", help="Filter invoices created after this date (YYYY-MM-DD)")
+@click.option("--end-date", help="Report date (YYYY-MM-DD), defaults to today")
+@click.option("--currency", help="Filter by currency code (e.g., USD, CAD)")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def reports_ar_aging(start_date: Optional[str], end_date: Optional[str], currency: Optional[str], as_json: bool):
+    """Generate accounts receivable aging report."""
+    try:
+        config = load_config()
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run: fb auth login[/red]")
+            sys.exit(1)
+
+        with FreshBooksClient(config) as client:
+            reports_api = ReportsAPI(client)
+            report = reports_api.get_ar_aging(
+                start_date=start_date,
+                end_date=end_date,
+                currency_code=currency
+            )
+
+            if as_json:
+                import json
+                output = json.dumps(
+                    report.model_dump(),
+                    default=str,
+                    indent=2
+                )
+                click.echo(output)
+            else:
+                from rich.table import Table
+
+                table = Table(title=f"AR Aging Report - {report.company_name}")
+                table.add_column("Bucket", style="cyan")
+                table.add_column("Amount", justify="right", style="green")
+
+                table.add_row("Current (0-30 days)", f"{report.totals.current.code} {report.totals.current.amount:,.2f}")
+                table.add_row("31-60 days", f"{report.totals.days_30.code} {report.totals.days_30.amount:,.2f}")
+                table.add_row("61-90 days", f"{report.totals.days_60.code} {report.totals.days_60.amount:,.2f}")
+                table.add_row("91+ days", f"{report.totals.days_90_plus.code} {report.totals.days_90_plus.amount:,.2f}", style="red")
+                table.add_row("", "")
+                table.add_row("Total Outstanding", f"{report.totals.total.code} {report.totals.total.amount:,.2f}", style="bold")
+
+                console.print()
+                console.print(table)
+                console.print()
+                console.print(f"[dim]Report date: {report.end_date}[/dim]")
+                console.print(f"[dim]Currency: {report.currency_code}[/dim]")
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
