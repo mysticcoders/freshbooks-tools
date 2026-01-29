@@ -177,3 +177,20 @@ class FreshBooksClient:
     def auth_url(self, path: str) -> str:
         """Build auth API URL."""
         return f"{self.BASE_AUTH_URL}/{path}"
+
+    def reports_url(self, endpoint: str, use_business_id: bool = False) -> str:
+        """
+        Build reports endpoint URL.
+
+        Args:
+            endpoint: Report path (e.g., 'accounts_aging', 'profit_and_loss')
+            use_business_id: If True, use /businesses/{id} pattern
+                            If False, use /account/{id}/reports/accounting pattern
+
+        Returns:
+            Full URL for the report endpoint
+        """
+        account_id, business_id = self.ensure_account_info()
+        if use_business_id:
+            return f"https://api.freshbooks.com/accounting/businesses/{business_id}/reports/{endpoint}"
+        return f"https://api.freshbooks.com/accounting/account/{account_id}/reports/accounting/{endpoint}"
