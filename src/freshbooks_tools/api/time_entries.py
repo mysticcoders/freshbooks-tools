@@ -184,11 +184,41 @@ class TimeEntriesAPI:
             include_team=include_team,
         )
 
+    def delete(self, time_entry_id: int) -> bool:
+        """Delete a time entry by ID."""
+        url = self.client.timetracking_url(f"time_entries/{time_entry_id}")
+        self.client.client.delete(url, headers=self.client.headers)
+        return True
+
+    def update(
+        self,
+        time_entry_id: int,
+        billable: Optional[bool] = None,
+        billed: Optional[bool] = None,
+        note: Optional[str] = None,
+    ) -> bool:
+        """Update a time entry."""
+        url = self.client.timetracking_url(f"time_entries/{time_entry_id}")
+
+        payload: dict = {"time_entry": {}}
+
+        if billable is not None:
+            payload["time_entry"]["billable"] = billable
+        if billed is not None:
+            payload["time_entry"]["billed"] = billed
+        if note is not None:
+            payload["time_entry"]["note"] = note
+
+        response = self.client.client.put(url, headers=self.client.headers, json=payload)
+        response.raise_for_status()
+        return True
+
     def create(
         self,
         started_at: datetime,
         duration_seconds: int,
         project_id: Optional[int] = None,
+        client_id: Optional[int] = None,
         service_id: Optional[int] = None,
         note: Optional[str] = None,
         billable: bool = True,
@@ -207,6 +237,8 @@ class TimeEntriesAPI:
 
         if project_id:
             payload["time_entry"]["project_id"] = project_id
+        if client_id:
+            payload["time_entry"]["client_id"] = client_id
         if service_id:
             payload["time_entry"]["service_id"] = service_id
         if note:

@@ -598,15 +598,16 @@ def time_add(hours: float, date: Optional[str], project: str,
                 started_at=entry_date,
                 duration_seconds=duration_seconds,
                 project_id=selected_project.id,
+                client_id=selected_project.client_id,
                 service_id=service_id,
                 note=note,
                 billable=billable,
             )
 
-            console.print(f"[green]Added {hours:.2f} hours to \"{selected_project.title}\"", end="")
+            msg = f"Added {hours:.2f} hours to \"{selected_project.title}\""
             if service_name:
-                console.print(f" ({service_name})", end="")
-            console.print("[/green]")
+                msg += f" ({service_name})"
+            console.print(f"[green]{msg}[/green]")
 
             if note:
                 console.print(f"[dim]Note: {note}[/dim]")
@@ -616,6 +617,139 @@ def time_add(hours: float, date: Optional[str], project: str,
     except click.Abort:
         console.print("\n[yellow]Cancelled.[/yellow]")
         sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+
+@time.command("unbilled")
+@click.option("--by-client", is_flag=True, help="Group by client")
+@click.option("--by-project", is_flag=True, help="Group by project")
+@click.option("--by-teammate", is_flag=True, help="Group by teammate")
+@click.option("--before", "before_date", help="Only entries before date (YYYY-MM-DD)")
+@click.option("--after", "after_date", help="Only entries after date (YYYY-MM-DD)")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def time_unbilled(by_client: bool, by_project: bool, by_teammate: bool,
+                  before_date: Optional[str], after_date: Optional[str], as_json: bool):
+    """Show unbilled billable time entries."""
+    try:
+        config = load_config()
+
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run 'fb auth login' first.[/red]")
+            sys.exit(1)
+
+        started_from = None
+        started_to = None
+
+        if before_date:
+            try:
+                started_to = datetime.strptime(before_date, "%Y-%m-%d").replace(hour=23, minute=59, second=59)
+            except ValueError:
+                console.print("[red]Invalid date format for --before. Use YYYY-MM-DD.[/red]")
+                sys.exit(1)
+
+        if after_date:
+            try:
+                started_from = datetime.strptime(after_date, "%Y-%m-%d")
+            except ValueError:
+                console.print("[red]Invalid date format for --after. Use YYYY-MM-DD.[/red]")
+                sys.exit(1)
+
+        with FreshBooksClient(config) as client:
+            time_api = TimeEntriesAPI(client)
+            team_api = TeamAPI(client)
+            rates_api = RatesAPI(client, team_api, config.rates)
+            invoices_api = InvoicesAPI(client)
+            projects_api = ProjectsAPI(client)
+
+            entries = time_api.list_all(
+                billed=False,
+                billable=True,
+                started_from=started_from,
+                started_to=started_to,
+            )
+
+            if not entries:
+                if as_json:
+                    print(json.dumps({"entries": [], "total_hours": 0, "total_amount": 0}))
+                else:
+                    console.print("[yellow]No unbilled time entries found.[/yellow]")
+                return
+
+            total_hours = sum(float(e.hours) for e in entries)
+            total_amount = Decimal("0")
+
+            for e in entries:
+                rate = rates_api.get_billable_rate(e.identity_id, e.service_id)
+                if rate:
+                    total_amount += e.hours * rate
+
+            if as_json:
+                groups = {}
+                for e in entries:
+                    if by_teammate:
+                        key = team_api.get_team_member_name(e.identity_id)
+                    elif by_project:
+                        proj = projects_api.get_by_id(e.project_id) if e.project_id else None
+                        key = proj.title if proj else "No Project"
+                    else:
+                        key = invoices_api.get_client_name(e.client_id) if e.client_id else "No Client"
+
+                    if key not in groups:
+                        groups[key] = {"hours": 0, "amount": 0}
+                    groups[key]["hours"] += float(e.hours)
+                    rate = rates_api.get_billable_rate(e.identity_id, e.service_id)
+                    if rate:
+                        groups[key]["amount"] += float(e.hours * rate)
+
+                output = {
+                    "total_hours": total_hours,
+                    "total_amount": float(total_amount),
+                    "groups": groups,
+                }
+                print(json.dumps(output, indent=2))
+                return
+
+            if by_project:
+                groups: dict[str, list] = {}
+                for e in entries:
+                    proj = projects_api.get_by_id(e.project_id) if e.project_id else None
+                    key = proj.title if proj else "No Project"
+                    groups.setdefault(key, []).append(e)
+                group_label = "Project"
+            elif by_teammate:
+                groups: dict[str, list] = {}
+                for e in entries:
+                    key = team_api.get_team_member_name(e.identity_id)
+                    groups.setdefault(key, []).append(e)
+                group_label = "Teammate"
+            else:
+                groups: dict[str, list] = {}
+                for e in entries:
+                    key = invoices_api.get_client_name(e.client_id) if e.client_id else "No Client"
+                    groups.setdefault(key, []).append(e)
+                group_label = "Client"
+
+            console.print(f"\n[bold]Unbilled Time by {group_label}[/bold]\n")
+
+            for name, group_entries in sorted(groups.items()):
+                group_hours = sum(float(e.hours) for e in group_entries)
+                group_amount = Decimal("0")
+                for e in group_entries:
+                    rate = rates_api.get_billable_rate(e.identity_id, e.service_id)
+                    if rate:
+                        group_amount += e.hours * rate
+
+                console.print(f"[cyan]{name}[/cyan]")
+                console.print(f"  Hours: [magenta]{group_hours:.2f}[/magenta]")
+                console.print(f"  Amount: [green]${group_amount:,.2f}[/green]")
+                console.print()
+
+            console.print("[bold]" + "-" * 40 + "[/bold]")
+            console.print(f"[bold]Total Hours:[/bold] [magenta]{total_hours:.2f}[/magenta]")
+            console.print(f"[bold]Total Unbilled:[/bold] [green]${total_amount:,.2f}[/green]")
+
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         sys.exit(1)
