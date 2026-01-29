@@ -26,7 +26,7 @@ from .config import (
     load_tokens,
 )
 from .ui.invoice_browser import run_invoice_browser
-from .ui.tables import InvoiceTable, TimeEntryRow, TimeEntryTable
+from .ui.tables import ARAgingTable, InvoiceTable, TimeEntryRow, TimeEntryTable
 
 console = Console()
 
@@ -979,24 +979,8 @@ def reports_ar_aging(start_date: Optional[str], end_date: Optional[str], currenc
                 )
                 click.echo(output)
             else:
-                from rich.table import Table
-
-                table = Table(title=f"AR Aging Report - {report.company_name}")
-                table.add_column("Bucket", style="cyan")
-                table.add_column("Amount", justify="right", style="green")
-
-                table.add_row("Current (0-30 days)", f"{report.totals.current.code} {report.totals.current.amount:,.2f}")
-                table.add_row("31-60 days", f"{report.totals.days_30.code} {report.totals.days_30.amount:,.2f}")
-                table.add_row("61-90 days", f"{report.totals.days_60.code} {report.totals.days_60.amount:,.2f}")
-                table.add_row("91+ days", f"{report.totals.days_90_plus.code} {report.totals.days_90_plus.amount:,.2f}", style="red")
-                table.add_row("", "")
-                table.add_row("Total Outstanding", f"{report.totals.total.code} {report.totals.total.amount:,.2f}", style="bold")
-
-                console.print()
-                console.print(table)
-                console.print()
-                console.print(f"[dim]Report date: {report.end_date}[/dim]")
-                console.print(f"[dim]Currency: {report.currency_code}[/dim]")
+                table = ARAgingTable(console)
+                table.print_report(report)
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
