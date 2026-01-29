@@ -5,10 +5,11 @@ from decimal import Decimal
 from typing import Optional
 
 from rich.console import Console
+from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from ..models import Invoice, TimeEntry
+from ..models import AccountAgingReport, Invoice, TimeEntry
 
 
 @dataclass
@@ -292,3 +293,179 @@ class InvoiceTable:
             for payment in invoice.payments:
                 gateway = f" via {payment.gateway}" if payment.gateway else ""
                 self.console.print(f"  • {payment.date}: [green]${payment.amount:.2f}[/green]{gateway}")
+
+
+class ARAgingTable:
+    """Rich table formatter for AR aging reports."""
+
+    AGING_COLORS = {
+        "current": "green",
+        "days_30": "yellow",
+        "days_60": "rgb(255,165,0)",
+        "days_90_plus": "red",
+    }
+
+    def __init__(self, console: Optional[Console] = None):
+        self.console = console or Console()
+
+    def _format_amount_with_color(self, amount: Decimal, bucket: str, currency_code: str) -> Text:
+        """Format currency amount with color based on aging bucket."""
+        color = self.AGING_COLORS.get(bucket, "white")
+        sign = "-" if amount < 0 else ""
+        formatted = f"{sign}${abs(amount):,.2f}"
+        text = Text(formatted, style=color)
+
+        age_labels = {
+            "current": "",
+            "days_30": " (overdue)",
+            "days_60": " (60+ days)",
+            "days_90_plus": " (90+ days)",
+        }
+        label = age_labels.get(bucket, "")
+        if label:
+            text.append(label, style="dim")
+
+        return text
+
+    def _count_invoices(self, report: AccountAgingReport) -> int:
+        """Count total invoices across all accounts."""
+        count = 0
+        for account in report.accounts:
+            if "invoices" in account:
+                count += len(account["invoices"])
+            else:
+                count += 1
+        return count
+
+    def _print_summary_panel(self, report: AccountAgingReport, position: str) -> None:
+        """Print summary panel at top or bottom of report."""
+        grid = Table.grid(padding=(0, 2))
+        grid.add_column(style="bold")
+        grid.add_column(justify="right")
+
+        total_amount = report.totals.total.amount
+        client_count = len(report.accounts)
+        invoice_count = self._count_invoices(report)
+
+        grid.add_row("Total Outstanding:", f"${total_amount:,.2f}")
+        grid.add_row("Clients:", str(client_count))
+        grid.add_row("Invoices:", str(invoice_count))
+        grid.add_row("", "")
+        grid.add_row("By Aging Bucket:", "")
+        grid.add_row(
+            "  0-30 days:",
+            self._format_amount_with_color(report.totals.current.amount, "current", report.currency_code)
+        )
+        grid.add_row(
+            "  31-60 days:",
+            self._format_amount_with_color(report.totals.days_30.amount, "days_30", report.currency_code)
+        )
+        grid.add_row(
+            "  61-90 days:",
+            self._format_amount_with_color(report.totals.days_60.amount, "days_60", report.currency_code)
+        )
+        grid.add_row(
+            "  91+ days:",
+            self._format_amount_with_color(report.totals.days_90_plus.amount, "days_90_plus", report.currency_code)
+        )
+
+        title = "Summary" if position == "top" else "Totals"
+        panel = Panel(grid, title=title, expand=False)
+        self.console.print(panel)
+
+    def _get_account_total(self, account: dict) -> Decimal:
+        """Get total outstanding for an account."""
+        if "total" in account:
+            total_data = account["total"]
+            if isinstance(total_data, dict) and "amount" in total_data:
+                return Decimal(str(total_data["amount"]))
+            return Decimal(str(total_data))
+        return Decimal("0")
+
+    def _get_bucket_amount(self, account: dict, bucket_key: str) -> Decimal:
+        """Get amount for a specific aging bucket from account data."""
+        if bucket_key in account:
+            bucket_data = account[bucket_key]
+            if isinstance(bucket_data, dict) and "amount" in bucket_data:
+                return Decimal(str(bucket_data["amount"]))
+            return Decimal(str(bucket_data))
+        return Decimal("0")
+
+    def _print_client_table(self, report: AccountAgingReport) -> None:
+        """Print the main client table with aging data."""
+        table = Table(title=f"AR Aging - {report.company_name}")
+
+        table.add_column("Client / Invoice", style="cyan")
+        table.add_column("0-30", justify="right")
+        table.add_column("31-60", justify="right")
+        table.add_column("61-90", justify="right")
+        table.add_column("91+", justify="right")
+        table.add_column("Total", justify="right", style="bold")
+
+        sorted_accounts = sorted(
+            report.accounts,
+            key=lambda a: self._get_account_total(a),
+            reverse=True
+        )
+
+        for account in sorted_accounts:
+            client_name = account.get("organization") or account.get("fname", "") + " " + account.get("lname", "")
+            client_name = client_name.strip() or "Unknown Client"
+
+            current = self._get_bucket_amount(account, "0-30")
+            days_30 = self._get_bucket_amount(account, "31-60")
+            days_60 = self._get_bucket_amount(account, "61-90")
+            days_90_plus = self._get_bucket_amount(account, "91+")
+            total = self._get_account_total(account)
+
+            table.add_row(
+                Text(client_name, style="bold"),
+                self._format_amount_with_color(current, "current", report.currency_code) if current else Text("-", style="dim"),
+                self._format_amount_with_color(days_30, "days_30", report.currency_code) if days_30 else Text("-", style="dim"),
+                self._format_amount_with_color(days_60, "days_60", report.currency_code) if days_60 else Text("-", style="dim"),
+                self._format_amount_with_color(days_90_plus, "days_90_plus", report.currency_code) if days_90_plus else Text("-", style="dim"),
+                Text(f"${total:,.2f}", style="bold"),
+            )
+
+            if "invoices" in account:
+                for inv in account["invoices"]:
+                    inv_label = inv.get("invoice_number") or inv.get("invoiceid") or "Invoice"
+                    due_date = inv.get("due_date", "")
+                    inv_display = f"  {inv_label}"
+                    if due_date:
+                        inv_display += f" (due {due_date})"
+
+                    inv_current = self._get_bucket_amount(inv, "0-30")
+                    inv_days_30 = self._get_bucket_amount(inv, "31-60")
+                    inv_days_60 = self._get_bucket_amount(inv, "61-90")
+                    inv_days_90_plus = self._get_bucket_amount(inv, "91+")
+                    inv_total = self._get_bucket_amount(inv, "total") if "total" in inv else (inv_current + inv_days_30 + inv_days_60 + inv_days_90_plus)
+
+                    table.add_row(
+                        Text(inv_display, style="dim"),
+                        self._format_amount_with_color(inv_current, "current", report.currency_code) if inv_current else Text("-", style="dim"),
+                        self._format_amount_with_color(inv_days_30, "days_30", report.currency_code) if inv_days_30 else Text("-", style="dim"),
+                        self._format_amount_with_color(inv_days_60, "days_60", report.currency_code) if inv_days_60 else Text("-", style="dim"),
+                        self._format_amount_with_color(inv_days_90_plus, "days_90_plus", report.currency_code) if inv_days_90_plus else Text("-", style="dim"),
+                        Text(f"${inv_total:,.2f}", style="dim"),
+                    )
+
+            table.add_section()
+
+        self.console.print(table)
+
+    def print_report(self, report: AccountAgingReport) -> None:
+        """Print the full AR aging report."""
+        if not report.accounts:
+            self.console.print("[yellow]No outstanding accounts found.[/yellow]")
+            return
+
+        self.console.print()
+        self._print_summary_panel(report, "top")
+        self.console.print()
+        self._print_client_table(report)
+        self.console.print()
+        self._print_summary_panel(report, "bottom")
+        self.console.print()
+        self.console.print(f"[dim]Report date: {report.end_date}[/dim]")
+        self.console.print(f"[dim]Currency: {report.currency_code}[/dim]")
