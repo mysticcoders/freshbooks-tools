@@ -183,3 +183,52 @@ class TimeEntriesAPI:
             billable=billable,
             include_team=include_team,
         )
+
+    def create(
+        self,
+        started_at: datetime,
+        duration_seconds: int,
+        project_id: Optional[int] = None,
+        service_id: Optional[int] = None,
+        note: Optional[str] = None,
+        billable: bool = True,
+    ) -> TimeEntry:
+        """Create a new time entry for the authenticated user."""
+        url = self.client.timetracking_url("time_entries")
+
+        payload = {
+            "time_entry": {
+                "started_at": started_at.strftime("%Y-%m-%dT%H:%M:%S"),
+                "duration": duration_seconds,
+                "is_logged": True,
+                "billable": billable,
+            }
+        }
+
+        if project_id:
+            payload["time_entry"]["project_id"] = project_id
+        if service_id:
+            payload["time_entry"]["service_id"] = service_id
+        if note:
+            payload["time_entry"]["note"] = note
+
+        response = self.client.post(url, data=payload)
+        entry_data = response.get("time_entry", {})
+
+        return TimeEntry(
+            id=entry_data["id"],
+            identity_id=entry_data["identity_id"],
+            duration=entry_data.get("duration", 0),
+            started_at=datetime.fromisoformat(
+                entry_data["started_at"].replace("Z", "+00:00")
+            ),
+            is_logged=entry_data.get("is_logged", True),
+            client_id=entry_data.get("client_id"),
+            project_id=entry_data.get("project_id"),
+            service_id=entry_data.get("service_id"),
+            billable=entry_data.get("billable", True),
+            billed=entry_data.get("billed", False),
+            note=entry_data.get("note"),
+            active=entry_data.get("active", True),
+            internal=entry_data.get("internal", False),
+        )

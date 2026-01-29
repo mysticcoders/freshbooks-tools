@@ -13,6 +13,7 @@ from rich.console import Console
 
 from .api.client import FreshBooksClient
 from .api.invoices import InvoicesAPI
+from .api.projects import ProjectsAPI
 from .api.rates import RatesAPI
 from .api.team import TeamAPI
 from .api.time_entries import TimeEntriesAPI
@@ -500,6 +501,123 @@ def time_export(month: str, fmt: str, output: Optional[str]):
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}", err=True)
+        sys.exit(1)
+
+
+@time.command("add")
+@click.option("--hours", "-h", required=True, type=float, help="Hours worked")
+@click.option("--date", "-d", default=None, help="Date (YYYY-MM-DD), defaults to today")
+@click.option("--project", "-p", required=True, help="Project name or fragment")
+@click.option("--service", "-s", help="Service/category name or fragment")
+@click.option("--note", "-n", help="Note/comment")
+@click.option("--billable/--not-billable", default=True, help="Mark as billable")
+def time_add(hours: float, date: Optional[str], project: str,
+             service: Optional[str], note: Optional[str], billable: bool):
+    """Add a new time entry."""
+    try:
+        config = load_config()
+
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run 'fb auth login' first.[/red]")
+            sys.exit(1)
+
+        if date:
+            try:
+                entry_date = datetime.strptime(date, "%Y-%m-%d")
+            except ValueError:
+                console.print("[red]Invalid date format. Use YYYY-MM-DD.[/red]")
+                sys.exit(1)
+        else:
+            entry_date = datetime.now()
+
+        entry_date = entry_date.replace(hour=9, minute=0, second=0, microsecond=0)
+
+        duration_seconds = int(hours * 3600)
+
+        with FreshBooksClient(config) as client:
+            projects_api = ProjectsAPI(client)
+            team_api = TeamAPI(client)
+            rates_api = RatesAPI(client, team_api, config.rates)
+            time_api = TimeEntriesAPI(client)
+
+            matching_projects = projects_api.find_by_name(project)
+
+            if not matching_projects:
+                all_projects = projects_api.list()
+                console.print(f"[red]No projects found matching '{project}'[/red]")
+                if all_projects:
+                    console.print("\n[yellow]Available projects:[/yellow]")
+                    for p in all_projects[:10]:
+                        console.print(f"  - {p.title}")
+                    if len(all_projects) > 10:
+                        console.print(f"  ... and {len(all_projects) - 10} more")
+                sys.exit(1)
+            elif len(matching_projects) == 1:
+                selected_project = matching_projects[0]
+            else:
+                console.print(f"[yellow]Multiple projects match '{project}':[/yellow]")
+                for i, p in enumerate(matching_projects, 1):
+                    console.print(f"  {i}. {p.title}")
+
+                choice = click.prompt(
+                    f"Select project [1-{len(matching_projects)}]",
+                    type=click.IntRange(1, len(matching_projects))
+                )
+                selected_project = matching_projects[choice - 1]
+
+            service_id = None
+            service_name = None
+            if service:
+                services = rates_api.list_services()
+                service_lower = service.lower()
+                matching_services = [s for s in services if service_lower in s.name.lower()]
+
+                if not matching_services:
+                    console.print(f"[red]No services found matching '{service}'[/red]")
+                    if services:
+                        console.print("\n[yellow]Available services:[/yellow]")
+                        for s in services:
+                            console.print(f"  - {s.name}")
+                    sys.exit(1)
+                elif len(matching_services) == 1:
+                    service_id = matching_services[0].id
+                    service_name = matching_services[0].name
+                else:
+                    console.print(f"[yellow]Multiple services match '{service}':[/yellow]")
+                    for i, s in enumerate(matching_services, 1):
+                        console.print(f"  {i}. {s.name}")
+
+                    choice = click.prompt(
+                        f"Select service [1-{len(matching_services)}]",
+                        type=click.IntRange(1, len(matching_services))
+                    )
+                    service_id = matching_services[choice - 1].id
+                    service_name = matching_services[choice - 1].name
+
+            entry = time_api.create(
+                started_at=entry_date,
+                duration_seconds=duration_seconds,
+                project_id=selected_project.id,
+                service_id=service_id,
+                note=note,
+                billable=billable,
+            )
+
+            console.print(f"[green]Added {hours:.2f} hours to \"{selected_project.title}\"", end="")
+            if service_name:
+                console.print(f" ({service_name})", end="")
+            console.print("[/green]")
+
+            if note:
+                console.print(f"[dim]Note: {note}[/dim]")
+            console.print(f"[dim]Date: {entry_date.strftime('%Y-%m-%d')}[/dim]")
+            console.print(f"[dim]Entry ID: {entry.id}[/dim]")
+
+    except click.Abort:
+        console.print("\n[yellow]Cancelled.[/yellow]")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
         sys.exit(1)
 
 

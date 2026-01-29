@@ -12,6 +12,7 @@ from .schemas import (
     ServiceRate,
     BusinessMembership,
     UserIdentity,
+    Project,
 )
 
 __all__ = [
@@ -26,4 +27,5 @@ __all__ = [
     "ServiceRate",
     "BusinessMembership",
     "UserIdentity",
+    "Project",
 ]

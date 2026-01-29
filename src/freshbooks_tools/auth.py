@@ -21,6 +21,7 @@ TOKEN_URL = "https://api.freshbooks.com/auth/oauth/token"
 SCOPES = [
     "user:profile:read",
     "user:time_entries:read",
+    "user:time_entries:write",
     "user:projects:read",
     "user:clients:read",
     "user:billable_items:read",

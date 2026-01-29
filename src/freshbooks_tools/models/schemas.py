@@ -222,3 +222,28 @@ class UserIdentity(BaseModel):
     def display_name(self) -> str:
         """Combined display name."""
         return f"{self.first_name or ''} {self.last_name or ''}".strip() or self.email
+
+
+class Project(BaseModel):
+    """A project from the timetracking API."""
+
+    id: int
+    title: str
+    client_id: Optional[int] = None
+    active: bool = True
+    complete: bool = False
+    billable: bool = True
+    internal: bool = False
+
+    @classmethod
+    def from_api(cls, data: dict) -> "Project":
+        """Create a Project from API response data."""
+        return cls(
+            id=data["id"],
+            title=data.get("title", ""),
+            client_id=data.get("client_id"),
+            active=data.get("active", True),
+            complete=data.get("complete", False),
+            billable=data.get("billable", True),
+            internal=data.get("internal", False),
+        )
