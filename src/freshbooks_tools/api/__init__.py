@@ -6,6 +6,7 @@ from .invoices import InvoicesAPI
 from .team import TeamAPI
 from .rates import RatesAPI
 from .projects import ProjectsAPI
+from .reports import ReportsAPI
 
 __all__ = [
     "FreshBooksClient",
@@ -14,4 +15,5 @@ __all__ = [
     "TeamAPI",
     "RatesAPI",
     "ProjectsAPI",
+    "ReportsAPI",
 ]
