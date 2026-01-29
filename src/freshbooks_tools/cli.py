@@ -5,6 +5,7 @@ import json
 import sys
 from datetime import datetime
 from decimal import Decimal
+from difflib import get_close_matches
 from io import StringIO
 from typing import Optional
 
@@ -26,7 +27,7 @@ from .config import (
     load_tokens,
 )
 from .ui.invoice_browser import run_invoice_browser
-from .ui.tables import ARAgingTable, InvoiceTable, TimeEntryRow, TimeEntryTable
+from .ui.tables import ARAgingTable, ClientARFormatter, InvoiceTable, TimeEntryRow, TimeEntryTable
 
 console = Console()
 
@@ -981,6 +982,124 @@ def reports_ar_aging(start_date: Optional[str], end_date: Optional[str], currenc
             else:
                 table = ARAgingTable(console)
                 table.print_report(report)
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+
+@reports.command("client-ar")
+@click.option("--client-id", type=int, help="Client ID for exact lookup")
+@click.option("--client-name", help="Client name for fuzzy lookup")
+@click.option("--detail", is_flag=True, help="Show bucket breakdown instead of compact output")
+@click.option("--currency", help="Filter by currency code (e.g., USD, CAD)")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def reports_client_ar(client_id: Optional[int], client_name: Optional[str], detail: bool, currency: Optional[str], as_json: bool):
+    """Query outstanding balance for a specific client by ID or name."""
+    try:
+        config = load_config()
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run: fb auth login[/red]")
+            sys.exit(1)
+
+        if not client_id and not client_name:
+            console.print("[red]Error: Must specify either --client-id or --client-name[/red]")
+            sys.exit(1)
+
+        if client_id and client_name:
+            console.print("[yellow]Note: Using --client-id, ignoring --client-name[/yellow]")
+            client_name = None
+
+        with FreshBooksClient(config) as client:
+            reports_api = ReportsAPI(client)
+            invoices_api = InvoicesAPI(client)
+
+            report = reports_api.get_ar_aging(currency_code=currency)
+
+            formatter = ClientARFormatter(console)
+
+            account = None
+            matched_name = None
+            matched_id = None
+
+            if client_id:
+                account = formatter.find_client_by_id(report.accounts, client_id)
+                if account:
+                    matched_name = formatter.get_client_name_from_account(account)
+                    matched_id = client_id
+            else:
+                account, matched_name = formatter.find_client_by_name(report.accounts, client_name)
+                if account:
+                    matched_id = account.get("userid")
+
+            if not account:
+                all_clients = invoices_api.list_clients()
+
+                if client_id:
+                    for c in all_clients:
+                        if c.id == client_id:
+                            matched_name = c.display_name
+                            matched_id = c.id
+                            break
+                else:
+                    client_names = [c.display_name for c in all_clients]
+                    matches = get_close_matches(client_name, client_names, n=1, cutoff=0.6)
+                    if matches:
+                        matched = next(c for c in all_clients if c.display_name == matches[0])
+                        matched_name = matched.display_name
+                        matched_id = matched.id
+
+            if not matched_name:
+                if as_json:
+                    import json
+                    print(json.dumps({"error": "Client not found"}))
+                else:
+                    console.print("[red]Error: Client not found[/red]")
+                sys.exit(1)
+
+            if not account:
+                if as_json:
+                    import json
+                    output = {
+                        "client_name": matched_name,
+                        "client_id": matched_id,
+                        "total": 0.0,
+                        "currency": report.currency_code,
+                        "has_outstanding": False,
+                    }
+                    print(json.dumps(output, indent=2))
+                else:
+                    console.print(f"Matched: {matched_name} (ID: {matched_id})")
+                    console.print(f"$0.00 outstanding ({report.currency_code})")
+            else:
+                total = account.get("total", {}).get("amount", 0) if isinstance(account.get("total"), dict) else account.get("total", 0)
+                total_decimal = Decimal(str(total))
+                worst_bucket = formatter.get_worst_bucket(account)
+
+                if as_json:
+                    import json
+                    output = {
+                        "client_name": matched_name,
+                        "client_id": matched_id,
+                        "total": float(total_decimal),
+                        "currency": report.currency_code,
+                        "has_outstanding": True,
+                    }
+
+                    if detail:
+                        buckets = {}
+                        for bucket_key in ["0-30", "31-60", "61-90", "91+"]:
+                            amount = formatter._get_bucket_amount(account, bucket_key)
+                            buckets[bucket_key] = float(amount)
+                        output["buckets"] = buckets
+
+                    print(json.dumps(output, indent=2))
+                else:
+                    console.print(f"Matched: {matched_name} (ID: {matched_id})")
+                    if detail:
+                        formatter.print_detail(matched_name, account, report.currency_code)
+                    else:
+                        formatter.print_compact(matched_name, total_decimal, worst_bucket, report.currency_code)
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
