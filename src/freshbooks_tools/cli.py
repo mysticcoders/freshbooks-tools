@@ -1008,7 +1008,9 @@ def reports_ar_aging(start_date: Optional[str], end_date: Optional[str], currenc
 @click.option("--detail", is_flag=True, help="Show bucket breakdown instead of compact output")
 @click.option("--currency", help="Filter by currency code (e.g., USD, CAD)")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def reports_client_ar(client_id: Optional[int], client_name: Optional[str], detail: bool, currency: Optional[str], as_json: bool):
+@click.option("--export", type=click.Choice(["csv"]), help="Export format")
+@click.option("--output", "-o", help="Output file path (default: auto-generated)")
+def reports_client_ar(client_id: Optional[int], client_name: Optional[str], detail: bool, currency: Optional[str], as_json: bool, export: Optional[str], output: Optional[str]):
     """Query outstanding balance for a specific client by ID or name."""
     try:
         config = load_config()
@@ -1071,6 +1073,21 @@ def reports_client_ar(client_id: Optional[int], client_name: Optional[str], deta
                     console.print("[red]Error: Client not found[/red]")
                 sys.exit(1)
 
+            if export == "csv":
+                from .ui.exporters import export_client_ar_csv
+                if not account:
+                    # Create zero-balance account dict
+                    account = {
+                        "0-30": 0,
+                        "31-60": 0,
+                        "61-90": 0,
+                        "91+": 0,
+                        "total": 0,
+                    }
+                filepath = export_client_ar_csv(matched_name, account, report.currency_code, output)
+                console.print(f"[green]Exported to {filepath}[/green]", err=True)
+                return
+
             if not account:
                 if as_json:
                     import json
@@ -1131,12 +1148,16 @@ def reports_client_ar(client_id: Optional[int], client_name: Optional[str], deta
 )
 @click.option("--currency", help="Filter by currency code (e.g., USD, CAD)")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.option("--export", type=click.Choice(["csv"]), help="Export format")
+@click.option("--output", "-o", help="Output file path (default: auto-generated)")
 def reports_revenue(
     start_date: str,
     end_date: str,
     resolution: str,
     currency: Optional[str],
-    as_json: bool
+    as_json: bool,
+    export: Optional[str],
+    output: Optional[str]
 ):
     """Generate revenue summary report with DSO metric."""
     try:
@@ -1162,6 +1183,12 @@ def reports_revenue(
             )
             ar_balance = ar_report.totals.total.amount
             report_currency = currency or ar_report.currency_code
+
+            if export == "csv":
+                from .ui.exporters import export_revenue_csv
+                filepath = export_revenue_csv(pl_report, ar_balance, report_currency, output)
+                console.print(f"[green]Exported to {filepath}[/green]", err=True)
+                return
 
             if as_json:
                 import json
