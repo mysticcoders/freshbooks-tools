@@ -7,6 +7,7 @@ from rich.console import Console
 
 from ..auth import ensure_valid_token, refresh_access_token
 from ..config import Config, load_account_info, save_account_info, save_tokens
+from ..exceptions import AuthenticationError, RateLimitError, NetworkError, APIResponseError
 
 console = Console()
 
@@ -46,39 +47,51 @@ class FreshBooksClient:
             "Content-Type": "application/json",
         }
 
-    def _handle_response(self, response: httpx.Response, retry_on_401: bool = True) -> dict[str, Any]:
-        """Handle API response with automatic token refresh on 401."""
-        if response.status_code == 401 and retry_on_401:
+    def _handle_response(self, response: httpx.Response) -> dict[str, Any]:
+        """Handle API response with proper error mapping."""
+        try:
+            response.raise_for_status()
+            return response.json()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 401:
+                raise AuthenticationError("API authentication failed") from e
+            elif e.response.status_code == 429:
+                retry_after = e.response.headers.get("Retry-After")
+                raise RateLimitError(retry_after=retry_after) from e
+            else:
+                raise APIResponseError(f"API error {e.response.status_code}: {e.response.text[:200]}") from e
+        except httpx.TimeoutException as e:
+            raise NetworkError("Request timed out") from e
+        except httpx.ConnectError as e:
+            raise NetworkError("Connection failed: unable to reach FreshBooks API") from e
+        except httpx.RequestError as e:
+            raise NetworkError(f"Network error: {e}") from e
+
+    def get(self, url: str, params: Optional[dict] = None) -> dict[str, Any]:
+        """Make authenticated GET request with automatic token refresh on 401."""
+        try:
+            response = self.client.get(url, headers=self.headers, params=params)
+            return self._handle_response(response)
+        except AuthenticationError:
             console.print("[dim]Token expired, refreshing...[/dim]")
             tokens = refresh_access_token(self.config)
             save_tokens(tokens)
             self.config.tokens = tokens
-            return None  # Signal to retry
-
-        response.raise_for_status()
-        return response.json()
-
-    def get(self, url: str, params: Optional[dict] = None, retry_on_401: bool = True) -> dict[str, Any]:
-        """Make authenticated GET request."""
-        response = self.client.get(url, headers=self.headers, params=params)
-        result = self._handle_response(response, retry_on_401)
-
-        if result is None:
             response = self.client.get(url, headers=self.headers, params=params)
-            result = self._handle_response(response, retry_on_401=False)
+            return self._handle_response(response)
 
-        return result
-
-    def post(self, url: str, data: Optional[dict] = None, retry_on_401: bool = True) -> dict[str, Any]:
-        """Make authenticated POST request."""
-        response = self.client.post(url, headers=self.headers, json=data)
-        result = self._handle_response(response, retry_on_401)
-
-        if result is None:
+    def post(self, url: str, data: Optional[dict] = None) -> dict[str, Any]:
+        """Make authenticated POST request with automatic token refresh on 401."""
+        try:
             response = self.client.post(url, headers=self.headers, json=data)
-            result = self._handle_response(response, retry_on_401=False)
-
-        return result
+            return self._handle_response(response)
+        except AuthenticationError:
+            console.print("[dim]Token expired, refreshing...[/dim]")
+            tokens = refresh_access_token(self.config)
+            save_tokens(tokens)
+            self.config.tokens = tokens
+            response = self.client.post(url, headers=self.headers, json=data)
+            return self._handle_response(response)
 
     def close(self) -> None:
         """Close the HTTP client."""
