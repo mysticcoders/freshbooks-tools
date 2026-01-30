@@ -961,7 +961,9 @@ def reports():
 @click.option("--end-date", help="Report date (YYYY-MM-DD), defaults to today")
 @click.option("--currency", help="Filter by currency code (e.g., USD, CAD)")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
-def reports_ar_aging(start_date: Optional[str], end_date: Optional[str], currency: Optional[str], as_json: bool):
+@click.option("--export", type=click.Choice(["csv"]), help="Export format")
+@click.option("--output", "-o", help="Output file path (default: auto-generated)")
+def reports_ar_aging(start_date: Optional[str], end_date: Optional[str], currency: Optional[str], as_json: bool, export: Optional[str], output: Optional[str]):
     """Generate accounts receivable aging report."""
     try:
         config = load_config()
@@ -976,6 +978,12 @@ def reports_ar_aging(start_date: Optional[str], end_date: Optional[str], currenc
                 end_date=end_date,
                 currency_code=currency
             )
+
+            if export == "csv":
+                from .ui.exporters import export_ar_aging_csv
+                filepath = export_ar_aging_csv(report, output)
+                console.print(f"[green]Exported to {filepath}[/green]", err=True)
+                return
 
             if as_json:
                 import json
