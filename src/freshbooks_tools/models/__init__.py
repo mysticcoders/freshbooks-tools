@@ -16,6 +16,8 @@ from .schemas import (
     AmountWithCurrency,
     AgingBucket,
     AccountAgingReport,
+    ProfitLossIncomePeriod,
+    ProfitLossReport,
 )
 
 __all__ = [
@@ -34,4 +36,6 @@ __all__ = [
     "AmountWithCurrency",
     "AgingBucket",
     "AccountAgingReport",
+    "ProfitLossIncomePeriod",
+    "ProfitLossReport",
 ]

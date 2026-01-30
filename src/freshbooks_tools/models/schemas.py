@@ -278,3 +278,22 @@ class AccountAgingReport(BaseModel):
     totals: AgingBucket
     accounts: list[dict]
     download_token: Optional[str] = None
+
+
+class ProfitLossIncomePeriod(BaseModel):
+    """A single period's income total in a P&L report."""
+
+    start_date: str
+    end_date: str
+    total: AmountWithCurrency
+
+
+class ProfitLossReport(BaseModel):
+    """Profit and Loss report response from FreshBooks API."""
+
+    currency_code: str
+    start_date: str
+    end_date: str
+    resolution: str
+    income: list[ProfitLossIncomePeriod] = []
+    download_token: Optional[str] = None
