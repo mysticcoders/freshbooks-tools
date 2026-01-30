@@ -1,0 +1,29 @@
+{
+  "response": {
+    "result": {
+      "accounts_aging": {
+        "end_date": "2026-01-29",
+        "company_name": "Test Company",
+        "currency_code": "USD",
+        "totals": {
+          "0-30": {"amount": "1000.00", "code": "USD"},
+          "31-60": {"amount": "500.00", "code": "USD"},
+          "61-90": {"amount": "250.00", "code": "USD"},
+          "91+": {"amount": "100.00", "code": "USD"},
+          "total": {"amount": "1850.00", "code": "USD"}
+        },
+        "accounts": [
+          {
+            "userid": 12345,
+            "organization": "Acme Corp",
+            "0-30": {"amount": "500.00", "code": "USD"},
+            "31-60": {"amount": "200.00", "code": "USD"},
+            "61-90": {"amount": "150.00", "code": "USD"},
+            "91+": {"amount": "50.00", "code": "USD"},
+            "total": {"amount": "900.00", "code": "USD"}
+          }
+        ]
+      }
+    }
+  }
+}

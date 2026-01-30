@@ -1,0 +1,20 @@
+{
+  "response": {
+    "result": {
+      "profit_and_loss": {
+        "company_name": "Test Company",
+        "currency_code": "USD",
+        "start_date": "2026-01-01",
+        "end_date": "2026-01-31",
+        "resolution": "m",
+        "income": [
+          {
+            "start_date": "2026-01-01",
+            "end_date": "2026-01-31",
+            "total": {"amount": "10000.00", "code": "USD"}
+          }
+        ]
+      }
+    }
+  }
+}
