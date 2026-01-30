@@ -27,9 +27,15 @@ from .config import (
     load_tokens,
 )
 from .ui.invoice_browser import run_invoice_browser
-from .ui.tables import ARAgingTable, ClientARFormatter, InvoiceTable, TimeEntryRow, TimeEntryTable
+from .ui.tables import ARAgingTable, ClientARFormatter, InvoiceTable, RevenueSummaryTable, TimeEntryRow, TimeEntryTable
 
 console = Console()
+
+RESOLUTION_MAP = {
+    "monthly": "m",
+    "quarterly": "q",
+    "yearly": "y",
+}
 
 
 def parse_month(month_str: str) -> tuple[int, int]:
@@ -1100,6 +1106,83 @@ def reports_client_ar(client_id: Optional[int], client_name: Optional[str], deta
                         formatter.print_detail(matched_name, account, report.currency_code)
                     else:
                         formatter.print_compact(matched_name, total_decimal, worst_bucket, report.currency_code)
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+
+@reports.command("revenue")
+@click.option("--start-date", required=True, help="Report start date (YYYY-MM-DD)")
+@click.option("--end-date", required=True, help="Report end date (YYYY-MM-DD)")
+@click.option(
+    "--resolution",
+    type=click.Choice(["monthly", "quarterly", "yearly"]),
+    default="monthly",
+    help="Period grouping resolution"
+)
+@click.option("--currency", help="Filter by currency code (e.g., USD, CAD)")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def reports_revenue(
+    start_date: str,
+    end_date: str,
+    resolution: str,
+    currency: Optional[str],
+    as_json: bool
+):
+    """Generate revenue summary report with DSO metric."""
+    try:
+        config = load_config()
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run: fb auth login[/red]")
+            sys.exit(1)
+
+        with FreshBooksClient(config) as client:
+            reports_api = ReportsAPI(client)
+
+            api_resolution = RESOLUTION_MAP[resolution]
+            pl_report = reports_api.get_profit_and_loss(
+                start_date=start_date,
+                end_date=end_date,
+                resolution=api_resolution,
+                currency_code=currency,
+            )
+
+            ar_report = reports_api.get_ar_aging(
+                end_date=end_date,
+                currency_code=currency,
+            )
+            ar_balance = ar_report.totals.total.amount
+            report_currency = currency or ar_report.currency_code
+
+            if as_json:
+                import json
+                from .api.reports import calculate_dso, get_days_in_period
+
+                periods_output = []
+                for period in pl_report.income:
+                    start = datetime.strptime(period.start_date, "%Y-%m-%d")
+                    days = get_days_in_period(start.year, start.month, api_resolution)
+                    dso = calculate_dso(ar_balance, period.total.amount, days)
+
+                    periods_output.append({
+                        "start_date": period.start_date,
+                        "end_date": period.end_date,
+                        "revenue": float(period.total.amount),
+                        "dso": float(dso) if dso else None,
+                    })
+
+                output = {
+                    "periods": periods_output,
+                    "total_revenue": float(sum(p.total.amount for p in pl_report.income)),
+                    "ar_balance": float(ar_balance),
+                    "currency": report_currency,
+                    "resolution": resolution,
+                }
+                click.echo(json.dumps(output, indent=2))
+            else:
+                table = RevenueSummaryTable(console)
+                table.print_report(pl_report, ar_balance, report_currency)
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
