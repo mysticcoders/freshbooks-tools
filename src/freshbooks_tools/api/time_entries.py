@@ -5,8 +5,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Optional
 
+from rich.console import Console
+
 from ..models import TimeEntry
 from .client import FreshBooksClient
+
+console = Console()
 
 
 class TimeEntriesAPI:
@@ -14,6 +18,36 @@ class TimeEntriesAPI:
 
     def __init__(self, client: FreshBooksClient):
         self.client = client
+
+    def _parse_entries(self, entries_data: list[dict]) -> tuple[list[TimeEntry], int]:
+        """Parse time entries, returning (entries, skipped_count)."""
+        entries = []
+        skipped = 0
+
+        for entry_data in entries_data:
+            try:
+                entry = TimeEntry(
+                    id=entry_data["id"],
+                    identity_id=entry_data["identity_id"],
+                    duration=entry_data.get("duration", 0),
+                    started_at=datetime.fromisoformat(
+                        entry_data["started_at"].replace("Z", "+00:00")
+                    ),
+                    is_logged=entry_data.get("is_logged", True),
+                    client_id=entry_data.get("client_id"),
+                    project_id=entry_data.get("project_id"),
+                    service_id=entry_data.get("service_id"),
+                    billable=entry_data.get("billable", True),
+                    billed=entry_data.get("billed", False),
+                    note=entry_data.get("note"),
+                    active=entry_data.get("active", True),
+                    internal=entry_data.get("internal", False),
+                )
+                entries.append(entry)
+            except (KeyError, ValueError, TypeError):
+                skipped += 1
+
+        return entries, skipped
 
     def list(
         self,
@@ -86,29 +120,14 @@ class TimeEntriesAPI:
         entries_data = response.get("time_entries", [])
         total = response.get("meta", {}).get("total", len(entries_data))
 
-        entries = []
-        for entry_data in entries_data:
-            try:
-                entry = TimeEntry(
-                    id=entry_data["id"],
-                    identity_id=entry_data["identity_id"],
-                    duration=entry_data.get("duration", 0),
-                    started_at=datetime.fromisoformat(
-                        entry_data["started_at"].replace("Z", "+00:00")
-                    ),
-                    is_logged=entry_data.get("is_logged", True),
-                    client_id=entry_data.get("client_id"),
-                    project_id=entry_data.get("project_id"),
-                    service_id=entry_data.get("service_id"),
-                    billable=entry_data.get("billable", True),
-                    billed=entry_data.get("billed", False),
-                    note=entry_data.get("note"),
-                    active=entry_data.get("active", True),
-                    internal=entry_data.get("internal", False),
-                )
-                entries.append(entry)
-            except (KeyError, ValueError):
-                continue
+        entries, skipped = self._parse_entries(entries_data)
+
+        if skipped > 0:
+            console.print(
+                f"[yellow]Warning: Skipped {skipped} malformed time "
+                f"{'entry' if skipped == 1 else 'entries'}[/yellow]",
+                err=True
+            )
 
         return entries, total
 
