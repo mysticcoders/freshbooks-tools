@@ -12,6 +12,7 @@ import httpx
 from rich.console import Console
 
 from .config import Config, Tokens, save_tokens
+from .exceptions import AuthenticationError, NetworkError
 
 console = Console()
 
@@ -102,10 +103,19 @@ def exchange_code_for_tokens(config: Config, code: str) -> Tokens:
         "redirect_uri": config.redirect_uri,
     }
 
-    with httpx.Client() as client:
-        response = client.post(TOKEN_URL, data=data)
-        response.raise_for_status()
-        token_data = response.json()
+    try:
+        with httpx.Client() as client:
+            response = client.post(TOKEN_URL, data=data, timeout=30.0)
+            response.raise_for_status()
+            token_data = response.json()
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 401:
+            raise AuthenticationError("Authorization code invalid or expired") from e
+        raise AuthenticationError(f"Token exchange failed: HTTP {e.response.status_code}") from e
+    except httpx.TimeoutException as e:
+        raise NetworkError("Token exchange timed out") from e
+    except httpx.RequestError as e:
+        raise NetworkError(f"Network error during token exchange: {e}") from e
 
     expires_at = None
     if "expires_in" in token_data:
@@ -122,7 +132,7 @@ def exchange_code_for_tokens(config: Config, code: str) -> Tokens:
 def refresh_access_token(config: Config) -> Tokens:
     """Refresh the access token using the refresh token."""
     if not config.tokens or not config.tokens.refresh_token:
-        raise ValueError("No refresh token available")
+        raise AuthenticationError("No refresh token available")
 
     data = {
         "grant_type": "refresh_token",
@@ -131,10 +141,19 @@ def refresh_access_token(config: Config) -> Tokens:
         "refresh_token": config.tokens.refresh_token,
     }
 
-    with httpx.Client() as client:
-        response = client.post(TOKEN_URL, data=data)
-        response.raise_for_status()
-        token_data = response.json()
+    try:
+        with httpx.Client() as client:
+            response = client.post(TOKEN_URL, data=data, timeout=30.0)
+            response.raise_for_status()
+            token_data = response.json()
+    except httpx.HTTPStatusError as e:
+        if e.response.status_code == 401:
+            raise AuthenticationError("Refresh token expired or invalid") from e
+        raise AuthenticationError(f"Token refresh failed: HTTP {e.response.status_code}") from e
+    except httpx.TimeoutException as e:
+        raise NetworkError("Token refresh timed out") from e
+    except httpx.RequestError as e:
+        raise NetworkError(f"Network error during token refresh: {e}") from e
 
     expires_at = None
     if "expires_in" in token_data:
@@ -208,7 +227,7 @@ def start_oauth_flow(config: Config, local_port: int = 8374) -> Tokens:
 def ensure_valid_token(config: Config) -> Tokens:
     """Ensure we have a valid access token, refreshing if needed."""
     if not config.tokens:
-        raise ValueError("Not authenticated. Run 'fb auth login' first.")
+        raise AuthenticationError("Not authenticated. Run 'fb auth login' first.")
 
     if config.tokens.is_expired:
         console.print("[dim]Access token expired, refreshing...[/dim]")
