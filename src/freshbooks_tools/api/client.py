@@ -60,6 +60,14 @@ class FreshBooksClient:
                 raise RateLimitError(retry_after=retry_after) from e
             else:
                 raise APIResponseError(f"API error {e.response.status_code}: {e.response.text[:200]}") from e
+
+    def _make_request(self, method: str, url: str, **kwargs) -> httpx.Response:
+        """Make HTTP request with network error handling."""
+        try:
+            if method == "GET":
+                return self.client.get(url, headers=self.headers, **kwargs)
+            else:
+                return self.client.post(url, headers=self.headers, **kwargs)
         except httpx.TimeoutException as e:
             raise NetworkError("Request timed out") from e
         except httpx.ConnectError as e:
@@ -70,27 +78,27 @@ class FreshBooksClient:
     def get(self, url: str, params: Optional[dict] = None) -> dict[str, Any]:
         """Make authenticated GET request with automatic token refresh on 401."""
         try:
-            response = self.client.get(url, headers=self.headers, params=params)
+            response = self._make_request("GET", url, params=params)
             return self._handle_response(response)
         except AuthenticationError:
             console.print("[dim]Token expired, refreshing...[/dim]")
             tokens = refresh_access_token(self.config)
             save_tokens(tokens)
             self.config.tokens = tokens
-            response = self.client.get(url, headers=self.headers, params=params)
+            response = self._make_request("GET", url, params=params)
             return self._handle_response(response)
 
     def post(self, url: str, data: Optional[dict] = None) -> dict[str, Any]:
         """Make authenticated POST request with automatic token refresh on 401."""
         try:
-            response = self.client.post(url, headers=self.headers, json=data)
+            response = self._make_request("POST", url, json=data)
             return self._handle_response(response)
         except AuthenticationError:
             console.print("[dim]Token expired, refreshing...[/dim]")
             tokens = refresh_access_token(self.config)
             save_tokens(tokens)
             self.config.tokens = tokens
-            response = self.client.post(url, headers=self.headers, json=data)
+            response = self._make_request("POST", url, json=data)
             return self._handle_response(response)
 
     def close(self) -> None:
