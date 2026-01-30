@@ -1,9 +1,10 @@
 """Rich table formatters for CLI output."""
 
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 from difflib import get_close_matches
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from rich.console import Console
 from rich.panel import Panel
@@ -11,6 +12,9 @@ from rich.table import Table
 from rich.text import Text
 
 from ..models import AccountAgingReport, Invoice, TimeEntry
+
+if TYPE_CHECKING:
+    from ..models import ProfitLossReport
 
 
 @dataclass
@@ -571,3 +575,100 @@ class ClientARFormatter:
             amount_text = Text(f"${amount:,.2f}", style=color)
             self.console.print(f"{label}: ", end="")
             self.console.print(amount_text)
+
+
+class RevenueSummaryTable:
+    """Rich table formatter for revenue summary reports with DSO."""
+
+    def __init__(self, console: Optional[Console] = None):
+        self.console = console or Console()
+
+    def _format_period_label(self, start_date: str, end_date: str, resolution: str) -> str:
+        """Format period label based on resolution."""
+        start = datetime.strptime(start_date, "%Y-%m-%d")
+
+        if resolution == "m":
+            return start.strftime("%b %Y")
+        elif resolution == "q":
+            quarter = (start.month - 1) // 3 + 1
+            return f"Q{quarter} {start.year}"
+        elif resolution == "y":
+            return str(start.year)
+        else:
+            return f"{start_date} - {end_date}"
+
+    def _format_dso(self, dso: Optional[Decimal]) -> Text:
+        """Format DSO value with color coding."""
+        if dso is None:
+            return Text("N/A", style="dim")
+
+        if dso < 30:
+            style = "green"
+        elif dso < 45:
+            style = "yellow"
+        elif dso < 60:
+            style = "rgb(255,165,0)"
+        else:
+            style = "red"
+
+        return Text(f"{dso:.1f}", style=style)
+
+    def print_report(
+        self,
+        report: "ProfitLossReport",
+        ar_balance: Decimal,
+        currency: str
+    ) -> None:
+        """
+        Print revenue summary table with DSO.
+
+        Args:
+            report: ProfitLossReport with income periods
+            ar_balance: Current AR balance for DSO calculation
+            currency: Currency code for display
+        """
+        from ..api.reports import calculate_dso, get_days_in_period
+
+        if not report.income:
+            self.console.print("[yellow]No revenue data found for the specified period.[/yellow]")
+            return
+
+        table = Table(title=f"Revenue Summary ({currency})")
+        table.add_column("Period", style="cyan")
+        table.add_column("Revenue", justify="right", style="green")
+        table.add_column("DSO (days)", justify="right")
+
+        total_revenue = Decimal("0")
+
+        for period in report.income:
+            period_label = self._format_period_label(
+                period.start_date, period.end_date, report.resolution
+            )
+
+            revenue = period.total.amount
+            total_revenue += revenue
+
+            start = datetime.strptime(period.start_date, "%Y-%m-%d")
+            days = get_days_in_period(start.year, start.month, report.resolution)
+            dso = calculate_dso(ar_balance, revenue, days)
+
+            table.add_row(
+                period_label,
+                f"${revenue:,.2f}",
+                self._format_dso(dso),
+            )
+
+        table.add_section()
+        table.add_row(
+            Text("TOTAL", style="bold"),
+            Text(f"${total_revenue:,.2f}", style="bold green"),
+            Text("", style="dim"),
+        )
+
+        self.console.print()
+        self.console.print(table)
+        self.console.print()
+
+        self.console.print(f"[dim]Report period: {report.start_date} to {report.end_date}[/dim]")
+        self.console.print(f"[dim]Current AR Balance: ${ar_balance:,.2f}[/dim]")
+        self.console.print(f"[dim]Currency: {currency}[/dim]")
