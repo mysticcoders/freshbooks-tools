@@ -191,11 +191,23 @@ class Service(BaseModel):
     """A service that can be tracked against."""
 
     id: int
-    business_id: int
+    business_id: Optional[int] = None
     name: str
     billable: bool = True
     project_default: bool = False
     vis_state: int = 0
+
+    @classmethod
+    def from_api(cls, data: dict) -> "Service":
+        """Create a Service from API response data."""
+        return cls(
+            id=data["id"],
+            business_id=data.get("business_id"),
+            name=data.get("name", ""),
+            billable=data.get("billable", True),
+            project_default=data.get("project_default", False),
+            vis_state=data.get("vis_state", 0),
+        )
 
 
 class BusinessMembership(BaseModel):
@@ -234,10 +246,13 @@ class Project(BaseModel):
     complete: bool = False
     billable: bool = True
     internal: bool = False
+    services: list["Service"] = []
 
     @classmethod
     def from_api(cls, data: dict) -> "Project":
         """Create a Project from API response data."""
+        services_data = data.get("services", [])
+        services = [Service.from_api(s) for s in services_data]
         return cls(
             id=data["id"],
             title=data.get("title", ""),
@@ -246,6 +261,7 @@ class Project(BaseModel):
             complete=data.get("complete", False),
             billable=data.get("billable", True),
             internal=data.get("internal", False),
+            services=services,
         )
 
 

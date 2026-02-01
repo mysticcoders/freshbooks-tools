@@ -37,11 +37,20 @@ class ProjectsAPI:
         return [p for p in projects if fragment_lower in p.title.lower()]
 
     def get_by_id(self, project_id: int) -> Optional[Project]:
-        """Get a project by ID."""
+        """Get a project by ID from cache."""
         projects = self.list(include_internal=True)
         for p in projects:
             if p.id == project_id:
                 return p
+        return None
+
+    def get_with_services(self, project_id: int) -> Optional[Project]:
+        """Fetch a project by ID with its associated services."""
+        url = self.client.projects_url(f"project/{project_id}")
+        response = self.client.get(url)
+        project_data = response.get("project")
+        if project_data:
+            return Project.from_api(project_data)
         return None
 
     def clear_cache(self) -> None:

@@ -18,6 +18,7 @@ class FreshBooksClient:
     BASE_AUTH_URL = "https://api.freshbooks.com/auth/api/v1"
     BASE_ACCOUNTING_URL = "https://api.freshbooks.com/accounting/account"
     BASE_TIMETRACKING_URL = "https://api.freshbooks.com/timetracking/business"
+    BASE_PROJECTS_URL = "https://api.freshbooks.com/projects/business"
     BASE_COMMENTS_URL = "https://api.freshbooks.com/comments/business"
 
     def __init__(self, config: Config):
@@ -189,6 +190,11 @@ class FreshBooksClient:
         """Build time tracking API URL."""
         _, business_id = self.ensure_account_info()
         return f"{self.BASE_TIMETRACKING_URL}/{business_id}/{path}"
+
+    def projects_url(self, path: str) -> str:
+        """Build projects API URL (includes services in response)."""
+        _, business_id = self.ensure_account_info()
+        return f"{self.BASE_PROJECTS_URL}/{business_id}/{path}"
 
     def comments_url(self, path: str) -> str:
         """Build comments/services API URL."""

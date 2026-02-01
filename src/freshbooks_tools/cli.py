@@ -576,16 +576,19 @@ def time_add(hours: float, date: Optional[str], project: str,
             service_id = None
             service_name = None
             if service:
-                services = rates_api.list_services()
+                project_with_services = projects_api.get_with_services(selected_project.id)
+                services = project_with_services.services if project_with_services else []
                 service_lower = service.lower()
                 matching_services = [s for s in services if service_lower in s.name.lower()]
 
                 if not matching_services:
-                    console.print(f"[red]No services found matching '{service}'[/red]")
+                    console.print(f"[red]No services found matching '{service}' for project '{selected_project.title}'[/red]")
                     if services:
-                        console.print("\n[yellow]Available services:[/yellow]")
+                        console.print("\n[yellow]Available services for this project:[/yellow]")
                         for s in services:
                             console.print(f"  - {s.name}")
+                    else:
+                        console.print("[yellow]This project has no services configured.[/yellow]")
                     sys.exit(1)
                 elif len(matching_services) == 1:
                     service_id = matching_services[0].id
