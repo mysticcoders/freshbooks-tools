@@ -782,3 +782,75 @@ class RevenueSummaryTable:
         self.console.print(f"[dim]Report period: {report.start_date} to {report.end_date}[/dim]")
         self.console.print(f"[dim]Current AR Balance: ${ar_balance:,.2f}[/dim]")
         self.console.print(f"[dim]Currency: {currency}[/dim]")
+
+
+class ExpenseSummaryTable:
+    """Rich table formatter for expense summary reports."""
+
+    def __init__(self, console: Optional[Console] = None):
+        self.console = console or Console()
+
+    def print_report(
+        self,
+        aggregated: dict[str, dict[str, Decimal]],
+        group_by: str,
+        start_date: Optional[str] = None,
+        end_date: Optional[str] = None,
+    ) -> None:
+        """
+        Print expense summary table.
+
+        Args:
+            aggregated: dict[currency_code][group_key] = total_amount
+            group_by: "category", "vendor", or "period"
+            start_date: Optional start date for report header
+            end_date: Optional end date for report header
+        """
+        if not aggregated:
+            self.console.print("[yellow]No expenses found for the specified criteria.[/yellow]")
+            return
+
+        group_label = group_by.capitalize()
+        table = Table(title=f"Expense Summary by {group_label}")
+
+        table.add_column(group_label, style="cyan")
+        table.add_column("Total", justify="right", style="green")
+        table.add_column("Currency", justify="right", style="dim")
+
+        first_currency = True
+        for currency in sorted(aggregated.keys()):
+            groups = aggregated[currency]
+
+            if not first_currency:
+                table.add_section()
+            first_currency = False
+
+            currency_total = Decimal("0")
+            for group_key in sorted(groups.keys()):
+                amount = groups[group_key]
+                currency_total += amount
+                table.add_row(
+                    group_key,
+                    f"${amount:,.2f}",
+                    currency,
+                )
+
+            table.add_row(
+                Text("Subtotal", style="bold"),
+                Text(f"${currency_total:,.2f}", style="bold green"),
+                Text(currency, style="bold dim"),
+            )
+
+        self.console.print()
+        self.console.print(table)
+        self.console.print()
+
+        if start_date or end_date:
+            date_range = ""
+            if start_date and end_date:
+                date_range = f"{start_date} to {end_date}"
+            elif start_date:
+                date_range = f"From {start_date}"
+            elif end_date:
+                date_range = f"Through {end_date}"
+            self.console.print(f"[dim]Date range: {date_range}[/dim]")
