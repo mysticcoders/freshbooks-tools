@@ -206,6 +206,51 @@ def export_revenue_csv(report: "ProfitLossReport", ar_balance: Decimal, currency
     return filepath
 
 
+def export_expense_summary_csv(
+    aggregated: dict[str, dict[str, Decimal]],
+    group_by: str,
+    output: Optional[str] = None,
+) -> str:
+    """
+    Export expense summary to CSV.
+
+    Args:
+        aggregated: dict[currency_code][group_key] = total_amount
+        group_by: "category", "vendor", or "period"
+        output: Optional output file path (auto-generates if None)
+
+    Returns:
+        Path to the exported CSV file
+    """
+    filepath = output or generate_csv_filename(f"expense_summary_{group_by}")
+
+    buffer = StringIO()
+    writer = csv.writer(buffer)
+
+    group_labels = {
+        "category": "Category",
+        "vendor": "Vendor",
+        "period": "Period",
+    }
+    header_label = group_labels.get(group_by, "Group")
+    writer.writerow([header_label, "Total", "Currency"])
+
+    for currency in sorted(aggregated.keys()):
+        groups = aggregated[currency]
+        for group_key in sorted(groups.keys()):
+            total = groups[group_key]
+            writer.writerow([
+                group_key,
+                f"{total:.2f}",
+                currency,
+            ])
+
+    with open(filepath, "w", newline="") as f:
+        f.write(buffer.getvalue())
+
+    return filepath
+
+
 def _get_account_total(account: dict) -> Decimal:
     """Get total outstanding for an account."""
     if "total" in account:
