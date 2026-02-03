@@ -28,7 +28,7 @@ from .config import (
     load_tokens,
 )
 from .ui.invoice_browser import run_invoice_browser
-from .ui.tables import ARAgingTable, ClientARFormatter, ExpenseTable, InvoiceTable, RevenueSummaryTable, TimeEntryRow, TimeEntryTable
+from .ui.tables import ARAgingTable, ClientARFormatter, ExpenseTable, ExpenseSummaryTable, InvoiceTable, RevenueSummaryTable, TimeEntryRow, TimeEntryTable
 
 console = Console()
 
@@ -1222,6 +1222,109 @@ def reports_revenue(
             else:
                 table = RevenueSummaryTable(console)
                 table.print_report(pl_report, ar_balance, report_currency)
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+
+@reports.command("expense-summary")
+@click.option("--by-category", is_flag=True, help="Group totals by category")
+@click.option("--by-vendor", is_flag=True, help="Group totals by vendor")
+@click.option("--by-period", is_flag=True, help="Group totals by time period")
+@click.option("--quarterly", is_flag=True, help="Use quarterly periods (with --by-period)")
+@click.option("--start-date", help="Start date (YYYY-MM-DD)")
+@click.option("--end-date", help="End date (YYYY-MM-DD)")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def reports_expense_summary(
+    by_category: bool,
+    by_vendor: bool,
+    by_period: bool,
+    quarterly: bool,
+    start_date: Optional[str],
+    end_date: Optional[str],
+    as_json: bool,
+):
+    """Generate expense summary report grouped by category, vendor, or period."""
+    try:
+        grouping_count = sum([by_category, by_vendor, by_period])
+        if grouping_count == 0:
+            console.print("[red]Error: Specify --by-category, --by-vendor, or --by-period[/red]")
+            sys.exit(1)
+        if grouping_count > 1:
+            console.print("[red]Error: Only one grouping option allowed[/red]")
+            sys.exit(1)
+
+        config = load_config()
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run 'fb auth login' first.[/red]")
+            sys.exit(1)
+
+        with FreshBooksClient(config) as client:
+            expenses_api = ExpensesAPI(client)
+            all_expenses = expenses_api.list_all(
+                date_min=start_date,
+                date_max=end_date,
+            )
+
+            def aggregate_expenses(expenses, group_key_fn):
+                """Aggregate expenses by currency, then by group key."""
+                result: dict[str, dict[str, Decimal]] = {}
+                for expense in expenses:
+                    currency = expense.currency_code
+                    group_key = group_key_fn(expense)
+                    if currency not in result:
+                        result[currency] = {}
+                    if group_key not in result[currency]:
+                        result[currency][group_key] = Decimal("0")
+                    result[currency][group_key] += expense.total_amount
+                return result
+
+            if by_category:
+                group_by = "category"
+                def group_key_fn(exp):
+                    if exp.categoryid:
+                        return expenses_api.get_category_name(exp.categoryid)
+                    return "Uncategorized"
+            elif by_vendor:
+                group_by = "vendor"
+                def group_key_fn(exp):
+                    if exp.vendor:
+                        return exp.vendor.strip()
+                    return "(no vendor)"
+            else:
+                group_by = "period"
+                def group_key_fn(exp):
+                    year_month = exp.date[:7]
+                    if quarterly:
+                        year, month = year_month.split("-")
+                        quarter = (int(month) - 1) // 3 + 1
+                        return f"{year}-Q{quarter}"
+                    return year_month
+
+            aggregated = aggregate_expenses(all_expenses, group_key_fn)
+
+            if as_json:
+                output = {
+                    "group_by": group_by,
+                    "start_date": start_date,
+                    "end_date": end_date,
+                    "currencies": {}
+                }
+                for currency, groups in sorted(aggregated.items()):
+                    output["currencies"][currency] = {
+                        "groups": {k: float(v) for k, v in sorted(groups.items())},
+                        "total": float(sum(groups.values()))
+                    }
+                print(json.dumps(output, indent=2))
+                return
+
+            if not aggregated:
+                console.print("[yellow]No expenses found for the specified criteria.[/yellow]")
+                return
+
+            table = ExpenseSummaryTable(console)
+            table.print_report(aggregated, group_by, start_date, end_date)
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
