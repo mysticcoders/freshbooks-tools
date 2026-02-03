@@ -11,7 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from ..models import AccountAgingReport, Invoice, TimeEntry
+from ..models import AccountAgingReport, Expense, Invoice, TimeEntry
 
 if TYPE_CHECKING:
     from ..models import ProfitLossReport
@@ -298,6 +298,116 @@ class InvoiceTable:
             for payment in invoice.payments:
                 gateway = f" via {payment.gateway}" if payment.gateway else ""
                 self.console.print(f"  • {payment.date}: [green]${payment.amount:.2f}[/green]{gateway}")
+
+
+class ExpenseTable:
+    """Rich table formatter for expenses."""
+
+    STATUS_COLORS = {
+        "internal": "dim",
+        "outstanding": "yellow",
+        "invoiced": "blue",
+        "recouped": "green",
+    }
+
+    def __init__(self, console: Optional[Console] = None):
+        self.console = console or Console()
+
+    def get_status_style(self, status: str) -> str:
+        """Get Rich style for expense status."""
+        return self.STATUS_COLORS.get(status.lower(), "white")
+
+    def create_table(
+        self,
+        expenses: list[Expense],
+        get_category_name: callable,
+        title: Optional[str] = None,
+    ) -> Table:
+        """Create a Rich table from expenses."""
+        table = Table(title=title, show_footer=True)
+
+        table.add_column("Date", style="cyan", no_wrap=True)
+        table.add_column("Vendor", style="yellow")
+        table.add_column("Category", style="blue")
+        table.add_column("Amount", justify="right", style="green")
+        table.add_column("Status", justify="center")
+        table.add_column("Notes", max_width=30)
+
+        total_amount = Decimal("0")
+
+        for exp in expenses:
+            status_style = self.get_status_style(exp.display_status)
+            status_text = Text(exp.display_status, style=status_style)
+
+            amount = exp.total_amount
+            total_amount += amount
+
+            vendor = exp.vendor or "-"
+            category = get_category_name(exp.categoryid) if exp.categoryid else "-"
+            notes = exp.notes or ""
+            if len(notes) > 27:
+                notes = notes[:27] + "..."
+
+            table.add_row(
+                exp.date,
+                vendor,
+                category,
+                f"${amount:.2f}",
+                status_text,
+                notes,
+            )
+
+        table.columns[0].footer = ""
+        table.columns[1].footer = ""
+        table.columns[2].footer = ""
+        table.columns[3].footer = Text(f"${total_amount:.2f}", style="bold green")
+        table.columns[4].footer = Text("TOTAL", style="bold")
+        table.columns[5].footer = ""
+
+        return table
+
+    def print_table(
+        self,
+        expenses: list[Expense],
+        get_category_name: callable,
+        title: Optional[str] = None,
+    ) -> None:
+        """Print the expenses table."""
+        table = self.create_table(expenses, get_category_name, title)
+        self.console.print(table)
+
+    def print_expense_detail(self, expense: Expense, get_category_name: callable) -> None:
+        """Print detailed expense information."""
+        status_style = self.get_status_style(expense.display_status)
+
+        self.console.print()
+        self.console.print(f"[bold]Expense {expense.id}[/bold]")
+        self.console.print(f"  Date: [cyan]{expense.date}[/cyan]")
+        self.console.print(f"  Vendor: [yellow]{expense.vendor or 'N/A'}[/yellow]")
+
+        category = get_category_name(expense.categoryid) if expense.categoryid else "N/A"
+        self.console.print(f"  Category: [blue]{category}[/blue]")
+        self.console.print(f"  Status: [{status_style}]{expense.display_status}[/{status_style}]")
+        self.console.print(f"  Currency: {expense.currency_code}")
+        self.console.print()
+
+        self.console.print(f"  [bold]Base Amount:[/bold] ${expense.amount:.2f}")
+        if expense.taxAmount1:
+            tax_name = expense.taxName1 or "Tax 1"
+            self.console.print(f"  [dim]{tax_name}:[/dim] ${expense.taxAmount1:.2f}")
+        if expense.taxAmount2:
+            tax_name = expense.taxName2 or "Tax 2"
+            self.console.print(f"  [dim]{tax_name}:[/dim] ${expense.taxAmount2:.2f}")
+        self.console.print(f"  [bold green]Total:[/bold green] ${expense.total_amount:.2f}")
+
+        if expense.notes:
+            self.console.print()
+            self.console.print(f"  [bold]Notes:[/bold]")
+            self.console.print(f"    {expense.notes}")
+
+        if expense.invoiceid:
+            self.console.print()
+            self.console.print(f"  [bold]Attached to Invoice:[/bold] {expense.invoiceid}")
 
 
 class ARAgingTable:
