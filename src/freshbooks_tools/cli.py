@@ -13,6 +13,7 @@ import click
 from rich.console import Console
 
 from .api.client import FreshBooksClient
+from .api.expenses import ExpensesAPI
 from .api.invoices import InvoicesAPI
 from .api.projects import ProjectsAPI
 from .api.rates import RatesAPI
@@ -27,7 +28,7 @@ from .config import (
     load_tokens,
 )
 from .ui.invoice_browser import run_invoice_browser
-from .ui.tables import ARAgingTable, ClientARFormatter, InvoiceTable, RevenueSummaryTable, TimeEntryRow, TimeEntryTable
+from .ui.tables import ARAgingTable, ClientARFormatter, ExpenseTable, InvoiceTable, RevenueSummaryTable, TimeEntryRow, TimeEntryTable
 
 console = Console()
 
@@ -1221,6 +1222,176 @@ def reports_revenue(
             else:
                 table = RevenueSummaryTable(console)
                 table.print_report(pl_report, ar_balance, report_currency)
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+
+@cli.group()
+def expenses():
+    """Expense commands."""
+    pass
+
+
+@expenses.command("list")
+@click.option("--start-date", help="Start date (YYYY-MM-DD)")
+@click.option("--end-date", help="End date (YYYY-MM-DD)")
+@click.option("--category", help="Filter by category name (partial match)")
+@click.option("--vendor", help="Filter by vendor name (partial match)")
+@click.option("--status", type=click.Choice(["internal", "outstanding", "invoiced", "recouped"]), help="Filter by status")
+@click.option("--limit", "-l", default=100, help="Maximum number to show")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def expenses_list(start_date: Optional[str], end_date: Optional[str], category: Optional[str], vendor: Optional[str], status: Optional[str], limit: int, as_json: bool):
+    """List expenses with optional filters."""
+    STATUS_MAP = {
+        "internal": 0,
+        "outstanding": 1,
+        "invoiced": 2,
+        "recouped": 4,
+    }
+
+    try:
+        config = load_config()
+
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run 'fb auth login' first.[/red]")
+            sys.exit(1)
+
+        with FreshBooksClient(config) as client:
+            expenses_api = ExpensesAPI(client)
+
+            category_id = None
+            if category:
+                all_categories = expenses_api.list_categories()
+                category_lower = category.lower()
+                matching = [c for c in all_categories if category_lower in c.name.lower()]
+
+                if not matching:
+                    console.print(f"[red]No category found matching '{category}'[/red]")
+                    console.print("\n[yellow]Available categories:[/yellow]")
+                    for c in all_categories[:15]:
+                        console.print(f"  - {c.name}")
+                    if len(all_categories) > 15:
+                        console.print(f"  ... and {len(all_categories) - 15} more")
+                    sys.exit(1)
+                elif len(matching) > 1:
+                    console.print(f"[yellow]Multiple categories match '{category}':[/yellow]")
+                    for c in matching:
+                        console.print(f"  - {c.name}")
+                    sys.exit(1)
+                else:
+                    category_id = matching[0].id
+
+            status_code = STATUS_MAP.get(status) if status else None
+
+            all_expenses = expenses_api.list_all(
+                date_min=start_date,
+                date_max=end_date,
+                categoryid=category_id,
+                vendor=vendor,
+                status=status_code,
+            )
+
+            all_expenses = sorted(all_expenses, key=lambda e: e.date, reverse=True)[:limit]
+
+            if as_json:
+                total_amount = sum(e.total_amount for e in all_expenses)
+                output = {
+                    "expenses": [
+                        {
+                            "id": exp.id,
+                            "date": exp.date,
+                            "vendor": exp.vendor,
+                            "category": expenses_api.get_category_name(exp.categoryid) if exp.categoryid else None,
+                            "category_id": exp.categoryid,
+                            "status": exp.display_status,
+                            "currency": exp.currency_code,
+                            "amount": float(exp.amount),
+                            "tax1": float(exp.taxAmount1) if exp.taxAmount1 else None,
+                            "tax2": float(exp.taxAmount2) if exp.taxAmount2 else None,
+                            "total_amount": float(exp.total_amount),
+                            "notes": exp.notes,
+                            "invoice_id": exp.invoiceid,
+                        }
+                        for exp in all_expenses
+                    ],
+                    "total_amount": float(total_amount),
+                    "count": len(all_expenses),
+                }
+                print(json.dumps(output, indent=2))
+                return
+
+            if not all_expenses:
+                console.print("[yellow]No expenses found.[/yellow]")
+                return
+
+            title = "Expenses"
+            if category:
+                title += f" - {category}"
+            if status:
+                title += f" ({status})"
+
+            expense_table = ExpenseTable(console)
+            expense_table.print_table(all_expenses, expenses_api.get_category_name, title=title)
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+
+@expenses.command("show")
+@click.argument("expense_id", type=int)
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def expenses_show(expense_id: int, as_json: bool):
+    """Show details for a specific expense."""
+    try:
+        config = load_config()
+
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run 'fb auth login' first.[/red]")
+            sys.exit(1)
+
+        with FreshBooksClient(config) as client:
+            expenses_api = ExpensesAPI(client)
+
+            expense = expenses_api.get(expense_id)
+
+            if not expense:
+                if as_json:
+                    print(json.dumps({"error": f"Expense {expense_id} not found"}))
+                else:
+                    console.print(f"[red]Expense {expense_id} not found.[/red]")
+                sys.exit(1)
+
+            if as_json:
+                output = {
+                    "expense": {
+                        "id": expense.id,
+                        "date": expense.date,
+                        "vendor": expense.vendor,
+                        "category": expenses_api.get_category_name(expense.categoryid) if expense.categoryid else None,
+                        "category_id": expense.categoryid,
+                        "status": expense.display_status,
+                        "currency": expense.currency_code,
+                        "amount": float(expense.amount),
+                        "tax1_name": expense.taxName1,
+                        "tax1_amount": float(expense.taxAmount1) if expense.taxAmount1 else None,
+                        "tax2_name": expense.taxName2,
+                        "tax2_amount": float(expense.taxAmount2) if expense.taxAmount2 else None,
+                        "total_amount": float(expense.total_amount),
+                        "notes": expense.notes,
+                        "invoice_id": expense.invoiceid,
+                        "client_id": expense.clientid,
+                        "project_id": expense.projectid,
+                        "staff_id": expense.staffid,
+                    }
+                }
+                print(json.dumps(output, indent=2))
+                return
+
+            expense_table = ExpenseTable(console)
+            expense_table.print_expense_detail(expense, expenses_api.get_category_name)
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
