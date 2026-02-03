@@ -1236,6 +1236,8 @@ def reports_revenue(
 @click.option("--start-date", help="Start date (YYYY-MM-DD)")
 @click.option("--end-date", help="End date (YYYY-MM-DD)")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+@click.option("--export", type=click.Choice(["csv"]), help="Export format")
+@click.option("--output", "-o", help="Output file path (default: auto-generated)")
 def reports_expense_summary(
     by_category: bool,
     by_vendor: bool,
@@ -1244,6 +1246,8 @@ def reports_expense_summary(
     start_date: Optional[str],
     end_date: Optional[str],
     as_json: bool,
+    export: Optional[str],
+    output: Optional[str],
 ):
     """Generate expense summary report grouped by category, vendor, or period."""
     try:
@@ -1304,19 +1308,25 @@ def reports_expense_summary(
 
             aggregated = aggregate_expenses(all_expenses, group_key_fn)
 
+            if export == "csv":
+                from .ui.exporters import export_expense_summary_csv
+                filepath = export_expense_summary_csv(aggregated, group_by, output)
+                console.print(f"[green]Exported to {filepath}[/green]", err=True)
+                return
+
             if as_json:
-                output = {
+                json_output = {
                     "group_by": group_by,
                     "start_date": start_date,
                     "end_date": end_date,
                     "currencies": {}
                 }
                 for currency, groups in sorted(aggregated.items()):
-                    output["currencies"][currency] = {
+                    json_output["currencies"][currency] = {
                         "groups": {k: float(v) for k, v in sorted(groups.items())},
                         "total": float(sum(groups.values()))
                     }
-                print(json.dumps(output, indent=2))
+                print(json.dumps(json_output, indent=2))
                 return
 
             if not aggregated:
