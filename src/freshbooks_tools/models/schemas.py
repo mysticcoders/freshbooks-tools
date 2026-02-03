@@ -313,3 +313,66 @@ class ProfitLossReport(BaseModel):
     resolution: str
     income: list[ProfitLossIncomePeriod] = []
     download_token: Optional[str] = None
+
+
+class ExpenseCategory(BaseModel):
+    """An expense category record."""
+
+    id: int = Field(alias="categoryid")
+    category: str
+    is_cogs: bool = False
+    vis_state: int = 0
+
+    class Config:
+        populate_by_name = True
+
+    @property
+    def name(self) -> str:
+        """Category display name."""
+        return self.category
+
+
+class Expense(BaseModel):
+    """An expense record."""
+
+    id: int = Field(alias="expenseid")
+    amount: Decimal
+    currency_code: str = "USD"
+    date: str
+    vendor: Optional[str] = None
+    categoryid: Optional[int] = None
+    staffid: Optional[int] = None
+    clientid: Optional[int] = None
+    projectid: Optional[int] = None
+    notes: Optional[str] = None
+    status: int = 0
+    taxAmount1: Optional[Decimal] = None
+    taxAmount2: Optional[Decimal] = None
+    taxName1: Optional[str] = None
+    taxName2: Optional[str] = None
+    invoiceid: Optional[int] = None
+    vis_state: int = 0
+
+    class Config:
+        populate_by_name = True
+
+    @property
+    def display_status(self) -> str:
+        """Human-readable status."""
+        status_map = {
+            0: "Internal",
+            1: "Outstanding",
+            2: "Invoiced",
+            4: "Recouped",
+        }
+        return status_map.get(self.status, "Unknown")
+
+    @property
+    def total_amount(self) -> Decimal:
+        """Total amount including taxes."""
+        total = self.amount
+        if self.taxAmount1:
+            total += self.taxAmount1
+        if self.taxAmount2:
+            total += self.taxAmount2
+        return total
