@@ -76,6 +76,7 @@ When creating your FreshBooks app, enable these scopes:
 | `user:payments:read` | View payments | Yes |
 | `user:teams:read` | View team members | Yes |
 | `user:billable_items:read` | View services/rates | Yes |
+| `user:expenses:read` | View expenses | Yes |
 
 ### Environment Configuration
 
