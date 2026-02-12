@@ -6,7 +6,7 @@ A Python CLI for querying FreshBooks financial data - AR aging, revenue reports,
 
 ```bash
 # Clone and install
-git clone https://github.com/yourusername/freshbooks-tools.git
+git clone https://github.com/mysticcoders/freshbooks-tools.git
 cd freshbooks-tools
 uv sync
 
