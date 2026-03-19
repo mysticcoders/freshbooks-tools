@@ -234,6 +234,7 @@ def ensure_valid_token(config: Config) -> Tokens:
         console.print("[dim]Access token expired, refreshing...[/dim]")
         tokens = refresh_access_token(config)
         save_tokens(tokens)
+        config.tokens = tokens
         return tokens
 
     return config.tokens

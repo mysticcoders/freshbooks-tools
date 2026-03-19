@@ -118,11 +118,17 @@ def auth_status():
     if tokens:
         console.print("[green]Authenticated[/green]")
         console.print(f"  Token expires: {tokens.expires_at or 'Unknown'}")
+        has_refresh = bool(tokens.refresh_token)
+        console.print(f"  Refresh token: {'[green]Available[/green]' if has_refresh else '[red]Missing[/red]'}")
         console.print(f"  Account ID: {account_id or 'Not cached'}")
         console.print(f"  Business ID: {business_id or 'Not cached'}")
 
-        if tokens.is_expired:
-            console.print("[yellow]  Token is expired - will be refreshed on next request[/yellow]")
+        if tokens.is_expired and has_refresh:
+            console.print("[yellow]  Token is expired - will be refreshed automatically on next request[/yellow]")
+        elif tokens.is_expired:
+            console.print("[red]  Token is expired and no refresh token available - run 'fb auth login'[/red]")
+        else:
+            console.print("[green]  Token is valid and will auto-refresh when it expires[/green]" if has_refresh else "[yellow]  Token is valid but no refresh token - will need to re-login when it expires[/yellow]")
     else:
         console.print("[red]Not authenticated[/red]")
         console.print("Run 'fb auth login' to authenticate.")

@@ -3,7 +3,7 @@
 import json
 import os
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from decimal import Decimal
 from pathlib import Path
 from typing import Optional
@@ -30,10 +30,11 @@ class Tokens:
 
     @property
     def is_expired(self) -> bool:
-        """Check if access token is expired."""
+        """Check if access token is expired or within 5 minutes of expiring."""
         if self.expires_at is None:
             return False
-        return datetime.now() >= self.expires_at
+        buffer = timedelta(minutes=5)
+        return datetime.now() >= (self.expires_at - buffer)
 
     def to_dict(self) -> dict:
         """Convert to dictionary for JSON serialization."""
