@@ -4,7 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class Timer(BaseModel):
@@ -63,8 +63,7 @@ class Payment(BaseModel):
     from_credit: Optional[bool] = None
     updated: Optional[str] = None
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class Invoice(BaseModel):
@@ -88,8 +87,7 @@ class Invoice(BaseModel):
     lines: list[InvoiceLine] = []
     payments: list[Payment] = []
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
     @property
     def display_status(self) -> str:
@@ -130,8 +128,7 @@ class Client(BaseModel):
     email: Optional[str] = None
     currency_code: str = "USD"
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
     @property
     def display_name(self) -> str:
@@ -227,8 +224,7 @@ class UserIdentity(BaseModel):
     email: str
     business_memberships: list[BusinessMembership] = []
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
     @property
     def display_name(self) -> str:
@@ -281,8 +277,7 @@ class AgingBucket(BaseModel):
     days_90_plus: AmountWithCurrency = Field(alias="91+")
     total: AmountWithCurrency
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
 
 class AccountAgingReport(BaseModel):
@@ -323,8 +318,7 @@ class ExpenseCategory(BaseModel):
     is_cogs: bool = False
     vis_state: int = 0
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
     @property
     def name(self) -> str:
@@ -353,8 +347,7 @@ class Expense(BaseModel):
     invoiceid: Optional[int] = None
     vis_state: int = 0
 
-    class Config:
-        populate_by_name = True
+    model_config = ConfigDict(populate_by_name=True)
 
     @property
     def display_status(self) -> str:
