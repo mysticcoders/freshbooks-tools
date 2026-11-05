@@ -11,7 +11,7 @@ from ..auth import ensure_valid_token, refresh_access_token
 from ..config import Config, load_account_info, load_lookup_cache, save_account_info, save_lookup_cache, save_tokens
 from ..exceptions import AuthenticationError, RateLimitError, NetworkError, APIResponseError
 
-console = Console()
+console = Console(stderr=True)  # stdout carries data (JSON output, MCP protocol)
 
 # shortcut: one TTL for every lookup (names, rates); per-endpoint TTLs if rates change often
 LOOKUP_TTL_SECONDS = 24 * 3600
@@ -106,6 +106,10 @@ class FreshBooksClient:
             self._lookup_cache[key] = entry
             save_lookup_cache(self._lookup_cache)
         return entry["data"]
+
+    def current_identity_id(self) -> int:
+        """Identity id of the logged-in user."""
+        return self.get_cached(f"{self.BASE_AUTH_URL}/users/me")["response"]["id"]
 
     def post(self, url: str, data: Optional[dict] = None) -> dict[str, Any]:
         """Make authenticated POST request with automatic token refresh on 401."""

@@ -80,6 +80,24 @@ class ProjectsAPI:
             names = {s.id: s.name for s in fresh}
         return names.get(service_id)
 
+    def match_projects(self, text: str) -> list[Project]:
+        """Projects matching an exact id or a case-insensitive name fragment."""
+        if text.isdigit() and (by_id := self.get_by_id(int(text))):
+            return [by_id]
+        return self.find_by_name(text)
+
+    def match_services(self, project_id: int, text: str) -> list[Service]:
+        """A project's services matching an exact id or a name fragment; refetches once on no match."""
+        def find(services):
+            if text.isdigit() and (by_id := [s for s in services if s.id == int(text)]):
+                return by_id
+            return [s for s in services if text.lower() in s.name.lower()]
+
+        matches = find(self.project_services(project_id))
+        if not matches and (fresh := self.refresh_once(project_id)) is not None:
+            matches = find(fresh)
+        return matches
+
     def clear_cache(self) -> None:
         """Clear in-memory project data."""
         self._projects_cache = None
