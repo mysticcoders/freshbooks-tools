@@ -156,38 +156,43 @@ class RatesAPI:
         7. Config file billable rate by email
         8. Default billable rate from config
         """
-        config_override = self.rates_config.get_billable_rate_by_id(identity_id)
-        if config_override is not None and config_override > 0:
-            return config_override
+        return self.resolve_billable_rate(identity_id, service_id, project_id)[0]
+
+    def resolve_billable_rate(
+        self,
+        identity_id: int,
+        service_id: Optional[int] = None,
+        project_id: Optional[int] = None,
+    ) -> tuple[Optional[Decimal], Optional[str]]:
+        """The billable rate and where it came from (None, None when nothing sets one)."""
+        def positive(rate):
+            return rate is not None and rate > 0
+
+        if positive(rate := self.rates_config.get_billable_rate_by_id(identity_id)):
+            return rate, "rates.yaml: members"
 
         if project_id:
-            project_override = self.rates_config.projects.get(project_id)
-            if project_override is not None and project_override > 0:
-                return project_override
-            project_rate = self.get_project_rate(project_id, identity_id, service_id)
-            if project_rate is not None and project_rate > 0:
-                return project_rate
+            if positive(rate := self.rates_config.projects.get(project_id)):
+                return rate, "rates.yaml: projects"
+            if positive(rate := self.get_project_rate(project_id, identity_id, service_id)):
+                return rate, "FreshBooks: project billing method"
 
-        if service_id:
-            service_rate = self.get_service_rate(service_id)
-            if service_rate is not None and service_rate > 0:
-                return service_rate
+        if service_id and positive(rate := self.get_service_rate(service_id)):
+            return rate, "FreshBooks: service rate"
 
-        team_rate = self.get_team_member_billable_rate(identity_id)
-        if team_rate is not None and team_rate > 0:
-            return team_rate
+        if positive(rate := self.get_team_member_billable_rate(identity_id)):
+            return rate, "FreshBooks: team member rate"
 
-        staff_rate = self.get_staff_rate(identity_id)
-        if staff_rate is not None and staff_rate > 0:
-            return staff_rate
+        if positive(rate := self.get_staff_rate(identity_id)):
+            return rate, "FreshBooks: staff rate"
 
         email = self.team_api.get_team_member_email(identity_id)
-        if email:
-            config_rate = self.rates_config.get_billable_rate(email)
-            if config_rate is not None and config_rate > 0:
-                return config_rate
+        if email and positive(rate := self.rates_config.get_billable_rate(email)):
+            return rate, "rates.yaml: billable_rates by email"
 
-        return self.rates_config.default_billable_rate
+        if positive(rate := self.rates_config.default_billable_rate):
+            return rate, "rates.yaml: default_billable_rate"
+        return None, None
 
     def get_cost_rate(self, identity_id: int) -> Optional[Decimal]:
         """

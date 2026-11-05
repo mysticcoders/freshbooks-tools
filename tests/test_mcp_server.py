@@ -278,3 +278,64 @@ def test_rates_yaml_project_override_wins(isolated_config_dir, monkeypatch):
             raise AssertionError("should not hit the API")
 
     assert RatesAPI(NoNetwork(), NoNetwork(), rates_config).get_billable_rate(5, 10, 1) == Decimal("125")
+
+
+def test_set_billable_rate_keeps_other_settings(isolated_config_dir, monkeypatch):
+    import yaml
+    from decimal import Decimal
+    from freshbooks_tools import config as config_module
+
+    rates_file = isolated_config_dir / "rates.yaml"
+    monkeypatch.setattr(config_module, "RATES_FILE", rates_file)
+    rates_file.write_text("default_cost_rate: 50\nmembers:\n  5:\n    name: Ann\n    cost_rate: 70\n")
+
+    config_module.set_billable_rate(Decimal("125"), identity_id=5, name="ignored")
+    config_module.set_billable_rate(Decimal("140"), project_id=1)
+
+    data = yaml.safe_load(rates_file.read_text())
+    assert data == {"default_cost_rate": 50,
+                    "members": {5: {"name": "Ann", "cost_rate": 70, "billable_rate": 125.0}},
+                    "projects": {1: {"billable_rate": 140.0}}}
+    loaded = config_module.load_rates_config()
+    assert loaded.members[5]["billable_rate"] == Decimal("125") and loaded.projects[1] == Decimal("140")
+    with pytest.raises(ValueError):
+        config_module.set_billable_rate(Decimal("1"), identity_id=5, project_id=1)
+
+
+def test_set_then_get_billable_rate_via_mcp(isolated_config_dir, monkeypatch, httpx_mock):
+    from freshbooks_tools import config as config_module
+
+    monkeypatch.setattr(config_module, "RATES_FILE", isolated_config_dir / "rates.yaml")
+    monkeypatch.setattr(mcp_server, "RATES_FILE", isolated_config_dir / "rates.yaml")
+    monkeypatch.setattr(mcp_server, "load_config", lambda: config_module.Config(
+        "id", "secret", "uri", config_module.Tokens("a", "r", "Bearer"), config_module.load_rates_config()))
+    httpx_mock.add_response(url=PROJECTS, json=PROJECT_LIST)
+
+    result = mcp_server.set_billable_rate(140, project="acme consulting")
+    assert result["applies_to"] == "project Acme Consulting (id 1)"
+
+    httpx_mock.add_response(url=ME, json={"response": {"id": 5}})
+    got = mcp_server.get_billable_rate(project="1")
+    assert (got["rate"], got["source"]) == ("140.0", "rates.yaml: projects")
+
+
+def test_set_billable_rate_rejects_project_and_teammate():
+    with pytest.raises(ToolError, match="not both"):
+        mcp_server.set_billable_rate(100, project="acme", teammate="ann")
+
+
+def test_list_time_entries_includes_amounts(httpx_mock, monkeypatch):
+    from decimal import Decimal
+
+    monkeypatch.setattr("freshbooks_tools.api.rates.RatesAPI.get_billable_rate",
+                        lambda self, identity_id, service_id=None, project_id=None: Decimal("125"))
+    monkeypatch.setattr("freshbooks_tools.api.team.TeamAPI.get_team_member_name", lambda self, i: "Ann")
+    httpx_mock.add_response(url=ME, json={"response": {"id": 5}})
+    httpx_mock.add_response(url=ENTRIES, json={"time_entries": [entry(1, 10, 2, 5)], "meta": {"pages": 1, "total": 1}})
+    httpx_mock.add_response(url=PROJECTS, json=PROJECT_LIST)
+    httpx_mock.add_response(url=ACME, json=ACME_DETAIL)
+
+    result = mcp_server.list_time_entries(start_date="2026-11-01")
+
+    assert result["entries"][0]["billable_rate"] == "125" and result["entries"][0]["amount"] == "250.00"
+    assert result["total_amount"] == "250.00"

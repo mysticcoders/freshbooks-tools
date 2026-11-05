@@ -19,7 +19,7 @@ Non-billable entries have no billable rate.
 
 ## Rates you can't see
 
-FreshBooks usually hides project and team rates from project members: the API returns them as empty. If you're a member rather than the owner, steps 3 to 6 typically find nothing and your amounts show as zero. Set your rate in `rates.yaml` instead, under `members` (one rate everywhere) or `projects` (per project). The MCP `unbilled_time` tool says when hours have no visible rate.
+FreshBooks usually hides project and team rates from project members: the API returns them as empty. If you're a member rather than the owner, steps 3 to 6 typically find nothing and your amounts show as zero. Set your rate in `rates.yaml` instead, under `members` (one rate everywhere) or `projects` (per project): `fb rates set 125` or `fb rates set 140 -p acme` writes it for you. `fb rates show` (MCP: `get_billable_rate`) tells you which rate applies and which step above it came from. The MCP `unbilled_time` tool says when hours have no visible rate.
 
 ## Cost rate
 

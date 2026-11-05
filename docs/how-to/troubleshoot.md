@@ -41,6 +41,10 @@ The lookup cache may be stale or the id may be new. `fb` refetches once on a mis
 fb cache clear
 ```
 
+## Amounts show as zero
+
+FreshBooks hides rates from project members. Run `fb rates show` to see what applies, and `fb rates set <rate>` to set yours. See [Configure cost rates](configure-cost-rates.md#billable-amounts-show-as-zero).
+
 ## Rate limit exceeded
 
 Wait for the retry time in the message. The lookup cache keeps repeated commands from re-fetching names and rates, which helps.

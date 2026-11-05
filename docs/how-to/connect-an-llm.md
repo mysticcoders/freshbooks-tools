@@ -59,6 +59,7 @@ Ollama serves models but doesn't launch MCP servers itself. Use an MCP-capable c
 
 - "Log two hours to acme today."
 - "Add another hour to acme." (adds to today's entry instead of creating a second one)
+- "My rate is $125 an hour." (saves it locally when FreshBooks hides your rate)
 - "What did I work on this week?"
 - "Make acme development my default."
 - "Show me overdue invoices."

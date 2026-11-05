@@ -23,6 +23,7 @@ Commands:
   invoices    Invoice commands.
   mcp         Run as an MCP server over stdio, for Claude, Codex and other LLM...
   projects    Project commands.
+  rates       Billable rates: see which applies, or set your own when FreshBooks...
   rates-init  Generate a rates.yaml template with all team members.
   reports     Financial reporting commands.
   team        List team members and contractors.
@@ -330,6 +331,54 @@ Usage: fb projects list [OPTIONS]
 Options:
   --json  Output as JSON
   --help  Show this message and exit.
+```
+
+## `fb rates`
+
+```text
+Usage: fb rates [OPTIONS] COMMAND [ARGS]...
+
+  Billable rates: see which applies, or set your own when FreshBooks hides it.
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  set   Save a billable rate in rates.yaml (yours on every project, or a project's).
+  show  Show the billable rate that applies and where it comes from.
+```
+
+## `fb rates set`
+
+```text
+Usage: fb rates set [OPTIONS] RATE
+
+  Save a billable rate in rates.yaml (yours on every project, or a project's).
+
+  Examples:
+    fb rates set 125               # your rate everywhere
+    fb rates set 140 -p acme       # the rate for one project
+  This changes local reports only, not FreshBooks.
+
+Options:
+  -p, --project TEXT   Set the rate for this project (alias, id, or name fragment)
+  -t, --teammate TEXT  Set a teammate's rate instead of yours
+  --help               Show this message and exit.
+```
+
+## `fb rates show`
+
+```text
+Usage: fb rates show [OPTIONS]
+
+  Show the billable rate that applies and where it comes from.
+
+Options:
+  -p, --project TEXT   Alias, project id, or name fragment
+  -s, --service TEXT   Service id or name fragment
+  -t, --teammate TEXT  Teammate name fragment (default: you)
+  --json               Output as JSON
+  --help               Show this message and exit.
 ```
 
 ## `fb rates-init`

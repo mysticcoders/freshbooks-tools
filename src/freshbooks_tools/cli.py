@@ -1778,6 +1778,58 @@ def mcp_serve():
     run()
 
 
+@cli.group()
+def rates():
+    """Billable rates: see which applies, or set your own when FreshBooks hides it."""
+    pass
+
+
+@rates.command("show")
+@click.option("--project", "-p", help="Alias, project id, or name fragment")
+@click.option("--service", "-s", help="Service id or name fragment")
+@click.option("--teammate", "-t", help="Teammate name fragment (default: you)")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def rates_show(project: Optional[str], service: Optional[str], teammate: Optional[str], as_json: bool):
+    """Show the billable rate that applies and where it comes from."""
+    from .mcp_server import ToolError, get_billable_rate
+
+    try:
+        result = get_billable_rate(project=project, service=service, teammate=teammate)
+    except ToolError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+    if as_json:
+        print(json.dumps(result, indent=2))
+    elif result["rate"] is None:
+        console.print("No billable rate is set or visible. Set one with: fb rates set <rate> [--project ...]")
+    else:
+        console.print(f"[bold]${Decimal(result['rate']):,.2f}/h[/bold] [dim]from {result['source']}[/dim]")
+
+
+@rates.command("set")
+@click.argument("rate", type=click.FloatRange(min=0, min_open=True))
+@click.option("--project", "-p", help="Set the rate for this project (alias, id, or name fragment)")
+@click.option("--teammate", "-t", help="Set a teammate's rate instead of yours")
+def rates_set(rate: float, project: Optional[str], teammate: Optional[str]):
+    """Save a billable rate in rates.yaml (yours on every project, or a project's).
+
+    \b
+    Examples:
+      fb rates set 125               # your rate everywhere
+      fb rates set 140 -p acme       # the rate for one project
+    This changes local reports only, not FreshBooks.
+    """
+    from .mcp_server import ToolError, set_billable_rate
+
+    try:
+        result = set_billable_rate(rate, project=project, teammate=teammate)
+    except ToolError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+    console.print(f"[green]${Decimal(result['rate']):,.2f}/h[/green] for {result['applies_to']}")
+    console.print(f"[dim]Saved in {result['rates_file']}[/dim]")
+
+
 @cli.command("rates-init")
 @click.option("--output", "-o", help="Output file path (default: ~/.config/freshbooks-tools/rates.yaml)")
 def rates_init(output: Optional[str]):

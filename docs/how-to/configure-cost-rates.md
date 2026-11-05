@@ -24,6 +24,17 @@ FreshBooks exposes billable rates but not cost rates (what a person costs you). 
    fb time summary -m 10
    ```
 
-If your billable amounts show as zero because FreshBooks hides your rate, add `billable_rate` the same way, under `members` for one rate everywhere or under `projects` for a per-project rate.
+## Billable amounts show as zero
+
+FreshBooks hides project rates from project members, so your amounts can come out as zero. Set your rate locally:
+
+```bash
+fb rates show                  # what applies now, and where it comes from
+fb rates set 125               # your rate on every project
+fb rates set 140 -p acme       # a rate for one project
+fb rates set 110 -t "Ann"      # a teammate's rate (owners and admins)
+```
+
+These write `billable_rate` entries to `rates.yaml` under `members` or `projects`. Other settings in the file are kept, but comments are not. An LLM connected over MCP can do the same with `set_billable_rate` when you say "my rate is $125".
 
 The full file format is in [Configuration › rates.yaml](../reference/configuration.md#ratesyaml). How `fb` chooses between rates is in [Rates](../explanation/rates.md).

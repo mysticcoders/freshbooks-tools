@@ -190,6 +190,35 @@ def delete_tokens() -> None:
         TOKENS_FILE.unlink()
 
 
+def set_billable_rate(rate: Decimal, identity_id: Optional[int] = None, project_id: Optional[int] = None,
+                      name: Optional[str] = None) -> None:
+    """Write a billable rate to rates.yaml, for a person (members) or a project (projects).
+
+    Keeps the file's other settings; YAML comments are not preserved.
+    """
+    if (identity_id is None) == (project_id is None):
+        raise ValueError("Give exactly one of identity_id or project_id")
+    if rate <= 0:
+        raise ValueError("Rate must be more than zero")
+    data = {}
+    if RATES_FILE.exists():
+        with open(RATES_FILE) as f:
+            data = yaml.safe_load(f) or {}
+    section, key = ("members", identity_id) if identity_id is not None else ("projects", project_id)
+    entries = data.get(section) or {}
+    entry = next((v for k, v in entries.items() if int(k) == key), None) or {}
+    entries = {int(k): v for k, v in entries.items() if int(k) != key}
+    entry["billable_rate"] = float(rate)
+    if name and section == "members":
+        entry.setdefault("name", name)
+    entries[key] = entry
+    data[section] = entries
+    ensure_config_dir()
+    with open(RATES_FILE, "w") as f:
+        yaml.safe_dump(data, f, sort_keys=False)
+    os.chmod(RATES_FILE, 0o600)
+
+
 def load_rates_config() -> RatesConfig:
     """Load rates configuration from YAML file.
 

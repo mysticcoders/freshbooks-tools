@@ -20,7 +20,7 @@ from .api.rates import RatesAPI
 from .api.reports import ReportsAPI
 from .api.team import TeamAPI
 from .api.time_entries import TimeEntriesAPI
-from .config import load_aliases, load_config, save_aliases
+from .config import RATES_FILE, load_aliases, load_config, save_aliases, set_billable_rate as write_billable_rate
 from .exceptions import FreshBooksError
 
 INSTRUCTIONS = """\
@@ -44,6 +44,10 @@ Business questions (owners and admins): list_invoices (pass client for "what doe
 unbilled_time ("what can we invoice?"), accounts_receivable_aging, profit_and_loss, list_expenses,
 list_time_entries with everyone=true. If a tool reports insufficient_scope or 403, explain that
 the user's FreshBooks role or login may not allow it; they may need `fb auth logout` then `fb auth login`.
+
+Rates: if amounts come back as zero or hours_without_rate is non-zero, FreshBooks is probably hiding
+the rate (it does for project members). Ask the user their rate and offer set_billable_rate.
+get_billable_rate shows which rate applies and where it comes from.
 
 Money values are strings to keep exact decimals.
 """
@@ -253,6 +257,74 @@ def set_alias(name: str, project: str, service: Optional[str] = None, make_defau
     return {"alias": name, **aliases["aliases"][name], "default": aliases["default"] == name}
 
 
+def _identity(client: FreshBooksClient, teammate: Optional[str]) -> int:
+    if not teammate:
+        return client.current_identity_id()
+    found = TeamAPI(client).find_identity_by_name(teammate)
+    if found is None:
+        raise ToolError(f"No teammate matches {teammate!r}. Call list_team to see names.")
+    return found
+
+
+@server.tool(annotations=READ)
+def get_billable_rate(project: Optional[str] = None, service: Optional[str] = None, teammate: Optional[str] = None) -> dict:
+    """The billable rate that applies to time logged by the user (or a teammate), and where it comes from.
+
+    project: alias, id or name fragment; service: id or name fragment; teammate: name fragment (default: the user).
+    source is e.g. "rates.yaml: members" or "FreshBooks: project billing method"; rate null means none is set.
+    """
+    with _client() as client:
+        projects_api = ProjectsAPI(client)
+        identity_id = _identity(client, teammate)
+        project_id = service_id = None
+        if project:
+            alias = load_aliases()["aliases"].get(project)
+            selected = projects_api.get_by_id(alias["project_id"]) if alias else \
+                _one(projects_api.match_projects(project), "project", project, lambda p: f"{p.title} (id {p.id})")
+            project_id = selected.id
+            if service:
+                service_id = _one(projects_api.match_services(project_id, service), "service", service, lambda s: f"{s.name} (id {s.id})").id
+            elif alias:
+                service_id = alias.get("service_id")
+        config = load_config()
+        rate, source = RatesAPI(client, TeamAPI(client), config.rates).resolve_billable_rate(identity_id, service_id, project_id)
+        return {
+            "identity_id": identity_id,
+            "project_id": project_id,
+            "service_id": service_id,
+            "rate": str(rate) if rate is not None else None,
+            "source": source,
+            "rates_file": str(RATES_FILE),
+            **({"hint": "No rate is visible. Ask the user for their rate and call set_billable_rate."} if rate is None else {}),
+        }
+
+
+@server.tool(annotations=WRITE)
+def set_billable_rate(rate: float, project: Optional[str] = None, teammate: Optional[str] = None) -> dict:
+    """Save a billable rate (per hour) in rates.yaml, used by reports and unbilled_time.
+
+    No project: the rate for the user (or teammate) on every project; it takes precedence over everything else.
+    project (alias, id or name fragment): the rate for that project, for anyone without a personal rate.
+    Give project or teammate, not both. This only changes local reports, not FreshBooks.
+    """
+    if rate <= 0:
+        raise ToolError("rate must be more than zero")
+    if project and teammate:
+        raise ToolError("Give project or teammate, not both: rates.yaml has no per-person-per-project rate.")
+    with _client() as client:
+        if project:
+            projects_api = ProjectsAPI(client)
+            alias = load_aliases()["aliases"].get(project)
+            selected = projects_api.get_by_id(alias["project_id"]) if alias else \
+                _one(projects_api.match_projects(project), "project", project, lambda p: f"{p.title} (id {p.id})")
+            write_billable_rate(Decimal(str(rate)), project_id=selected.id)
+            return {"rate": str(Decimal(str(rate))), "applies_to": f"project {selected.title} (id {selected.id})", "rates_file": str(RATES_FILE)}
+        identity_id = _identity(client, teammate)
+        name = TeamAPI(client).get_team_member_name(identity_id)
+        write_billable_rate(Decimal(str(rate)), identity_id=identity_id, name=name)
+        return {"rate": str(Decimal(str(rate))), "applies_to": f"{name} (identity {identity_id}) on every project", "rates_file": str(RATES_FILE)}
+
+
 @server.tool(annotations=READ)
 def list_time_entries(start_date: str, end_date: Optional[str] = None, everyone: bool = False) -> dict:
     """Time entries from start_date to end_date (YYYY-MM-DD, end defaults to today).
@@ -264,6 +336,7 @@ def list_time_entries(start_date: str, end_date: Optional[str] = None, everyone:
     with _client() as client:
         projects_api = ProjectsAPI(client)
         team_api = TeamAPI(client)
+        rates_api = RatesAPI(client, team_api, load_config().rates)
         entries = TimeEntriesAPI(client).list_all(
             identity_id=None if everyone else client.current_identity_id(),
             started_from=start, started_to=end,
@@ -271,7 +344,10 @@ def list_time_entries(start_date: str, end_date: Optional[str] = None, everyone:
         rows = []
         for e in sorted(entries, key=lambda e: e.started_at):
             project = projects_api.get_by_id(e.project_id) if e.project_id else None
+            rate = rates_api.get_billable_rate(e.identity_id, e.service_id, e.project_id) if e.billable else None
             rows.append({
+                "billable_rate": str(rate) if rate else None,
+                "amount": str((e.hours * rate).quantize(Decimal("0.01"))) if rate else None,
                 "entry_id": e.id,
                 "date": e.started_at.date().isoformat(),
                 "teammate": team_api.get_team_member_name(e.identity_id),
@@ -282,7 +358,11 @@ def list_time_entries(start_date: str, end_date: Optional[str] = None, everyone:
                 "billed": e.billed,
                 "note": e.note,
             })
-        return {"entries": rows, "total_hours": round(sum(r["hours"] for r in rows), 2)}
+        return {
+            "entries": rows,
+            "total_hours": round(sum(r["hours"] for r in rows), 2),
+            "total_amount": str(sum((Decimal(r["amount"]) for r in rows if r["amount"]), Decimal("0"))),
+        }
 
 
 @server.tool(annotations=READ)
