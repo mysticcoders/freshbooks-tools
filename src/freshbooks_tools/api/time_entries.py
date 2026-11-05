@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Optional
 
@@ -209,30 +209,31 @@ class TimeEntriesAPI:
         self.client.client.delete(url, headers=self.client.headers)
         return True
 
-    def update(
-        self,
-        time_entry_id: int,
-        billable: Optional[bool] = None,
-        billed: Optional[bool] = None,
-        note: Optional[str] = None,
-        duration_seconds: Optional[int] = None,
-    ) -> bool:
-        """Update a time entry."""
-        url = self.client.timetracking_url(f"time_entries/{time_entry_id}")
+    def update(self, entry: TimeEntry, **changes) -> TimeEntry:
+        """Update a time entry; changes are TimeEntry fields (e.g. duration=..., note=...).
 
-        payload: dict = {"time_entry": {}}
-
-        if billable is not None:
-            payload["time_entry"]["billable"] = billable
-        if billed is not None:
-            payload["time_entry"]["billed"] = billed
-        if note is not None:
-            payload["time_entry"]["note"] = note
-        if duration_seconds is not None:
-            payload["time_entry"]["duration"] = duration_seconds
-
-        self.client.put(url, data=payload)
-        return True
+        FreshBooks requires the full entry on update (started_at, is_logged, ...) and may clear
+        fields that are left out, so the existing entry is sent back with the changes applied.
+        """
+        updated = entry.model_copy(update=changes)
+        started = updated.started_at
+        if started.tzinfo is not None:
+            started = started.astimezone(timezone.utc)
+        fields = {
+            "started_at": started.strftime("%Y-%m-%dT%H:%M:%SZ"),  # same form FreshBooks returns
+            "is_logged": updated.is_logged,
+            "duration": updated.duration,
+            "identity_id": updated.identity_id,
+            "client_id": updated.client_id,
+            "project_id": updated.project_id,
+            "service_id": updated.service_id,
+            "billable": updated.billable,
+            "billed": updated.billed,
+            "note": updated.note,
+        }
+        payload = {"time_entry": {k: v for k, v in fields.items() if v is not None}}
+        self.client.put(self.client.timetracking_url(f"time_entries/{entry.id}"), data=payload)
+        return updated
 
     def find_mergeable(
         self,
@@ -285,9 +286,8 @@ class TimeEntriesAPI:
         merged_note = existing.note
         if note:
             merged_note = f"{existing.note}; {note}" if existing.note else note
-        self.update(existing.id, duration_seconds=existing.duration + duration_seconds,
-                    note=merged_note if merged_note != existing.note else None)
-        return existing.model_copy(update={"duration": existing.duration + duration_seconds, "note": merged_note}), before
+        updated = self.update(existing, duration=existing.duration + duration_seconds, note=merged_note)
+        return updated, before
 
     def create(
         self,
