@@ -560,14 +560,16 @@ def _select_project(projects_api: ProjectsAPI, text: str):
 
 def _select_service(projects_api: ProjectsAPI, project, text: str):
     """Pick one of a project's services by id or name fragment; prompt when several match, exit when none do."""
-    project_with_services = projects_api.get_with_services(project.id)
-    services = project_with_services.services if project_with_services else []
-    if text.isdigit():
-        by_id = [s for s in services if s.id == int(text)]
-        if by_id:
-            return by_id[0]
-    text_lower = text.lower()
-    matching_services = [s for s in services if text_lower in s.name.lower()]
+    def find(services):
+        if text.isdigit() and (by_id := [s for s in services if s.id == int(text)]):
+            return by_id
+        return [s for s in services if text.lower() in s.name.lower()]
+
+    services = projects_api.project_services(project.id)
+    matching_services = find(services)
+    if not matching_services and (fresh := projects_api.refresh_once(project.id)) is not None:
+        services = fresh  # not in the cache: the project may have new services
+        matching_services = find(services)
 
     if not matching_services:
         console.print(f"[red]No services found matching '{text}' for project '{project.title}'[/red]")
@@ -1580,9 +1582,8 @@ def projects_list(as_json: bool):
 
             result = []
             for p in sorted(projects_api.list(), key=lambda p: p.title.lower()):
-                # the list endpoint omits services; one call per project fetches them
-                detailed = projects_api.get_with_services(p.id)
-                services = detailed.services if detailed else []
+                # the list endpoint omits services; one call per project fetches them (and refreshes the cache)
+                services = projects_api.project_services(p.id, refresh=True)
                 result.append({
                     "id": p.id,
                     "title": p.title,
