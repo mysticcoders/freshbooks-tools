@@ -14,6 +14,7 @@ class InvoicesAPI:
     def __init__(self, client: FreshBooksClient):
         self.client = client
         self._clients_cache: Optional[dict[int, Client]] = None
+        self._clients_refreshed = False
 
     def list_invoices(
         self,
@@ -267,7 +268,7 @@ class InvoicesAPI:
         except Exception:
             return None
 
-    def list_clients(self) -> list[Client]:
+    def list_clients(self, refresh: bool = False) -> list[Client]:
         """List all clients."""
         url = self.client.accounting_url("users/clients")
         params = {"per_page": 100}
@@ -277,7 +278,7 @@ class InvoicesAPI:
 
         while True:
             params["page"] = page
-            response = self.client.get(url, params=params)
+            response = self.client.get_cached(url, params=params, refresh=refresh)
 
             result = response.get("response", {}).get("result", {})
             clients_data = result.get("clients", [])
@@ -316,6 +317,9 @@ class InvoicesAPI:
     def get_client_name(self, customer_id: int) -> str:
         """Get client display name by ID."""
         clients = self.get_clients_by_id()
+        if customer_id not in clients and not self._clients_refreshed:
+            self._clients_refreshed = True
+            clients = self._clients_cache = {c.id: c for c in self.list_clients(refresh=True)}
         if customer_id in clients:
             return clients[customer_id].display_name
         return f"Client {customer_id}"

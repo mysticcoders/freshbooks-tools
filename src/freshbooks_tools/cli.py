@@ -22,6 +22,7 @@ from .api.team import TeamAPI
 from .api.time_entries import TimeEntriesAPI
 from .auth import start_oauth_flow
 from .config import (
+    clear_lookup_cache,
     delete_tokens,
     load_account_info,
     load_aliases,
@@ -140,8 +141,9 @@ def auth_status():
 
 @auth.command("logout")
 def auth_logout():
-    """Clear stored authentication tokens."""
+    """Clear stored authentication tokens and cached lookups."""
     delete_tokens()
+    clear_lookup_cache()
     console.print("[green]Logged out successfully.[/green]")
 
 
@@ -1581,7 +1583,7 @@ def projects_list(as_json: bool):
             invoices_api = InvoicesAPI(client)
 
             result = []
-            for p in sorted(projects_api.list(), key=lambda p: p.title.lower()):
+            for p in sorted(projects_api.list(refresh=True), key=lambda p: p.title.lower()):
                 # the list endpoint omits services; one call per project fetches them (and refreshes the cache)
                 services = projects_api.project_services(p.id, refresh=True)
                 result.append({
@@ -1712,6 +1714,19 @@ def alias_rm(name: str):
         aliases["default"] = None
     save_aliases(aliases)
     console.print(f"Removed {name}")
+
+
+@cli.group()
+def cache():
+    """Cached lookups (projects, services, team, clients, rates); refreshed daily or on a miss."""
+    pass
+
+
+@cache.command("clear")
+def cache_clear():
+    """Delete cached lookups; the next command refetches them."""
+    clear_lookup_cache()
+    console.print("Cache cleared.")
 
 
 @cli.command("rates-init")
