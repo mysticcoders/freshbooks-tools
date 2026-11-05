@@ -209,7 +209,10 @@ def test_add_time_entry_adds_to_matching_entry(httpx_mock):
     assert (result["action"], result["entry_id"], result["hours_before"], result["hours_now"]) == ("updated", 7, 2.0, 3.0)
     put = httpx_mock.get_requests(method="PUT")[0]
     assert str(put.url).endswith("/time_entries/7")
-    assert json.loads(put.content)["time_entry"] == {"duration": 3 * 3600, "note": "morning; afternoon"}
+    # FreshBooks requires the whole entry on update; leaving fields out gets a 422 or clears them
+    assert json.loads(put.content)["time_entry"] == {
+        "started_at": "2026-11-05T09:00:00Z", "is_logged": True, "duration": 3 * 3600, "identity_id": 5,
+        "project_id": 1, "service_id": 10, "billable": True, "billed": False, "note": "morning; afternoon"}
     assert not httpx_mock.get_requests(method="POST")
 
 
