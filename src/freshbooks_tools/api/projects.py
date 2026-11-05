@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ..models import Project
+from ..config import load_services_cache, save_services_cache
+from ..models import Project, Service
 from .client import FreshBooksClient
 
 
@@ -14,7 +15,8 @@ class ProjectsAPI:
     def __init__(self, client: FreshBooksClient):
         self.client = client
         self._projects_cache: Optional[list[Project]] = None
-        self._services_by_project: dict[int, dict[int, str]] = {}
+        self._services_by_project: Optional[dict[int, dict[int, str]]] = None  # loaded from disk on first use
+        self._refreshed: set[int] = set()
 
     def list(self, include_internal: bool = False) -> list[Project]:
         """List all projects, cached."""
@@ -54,14 +56,32 @@ class ProjectsAPI:
             return Project.from_api(project_data)
         return None
 
-    def service_name(self, project_id: int, service_id: int) -> Optional[str]:
-        """Name of a service attached to a project (these can be missing from the business-wide service list)."""
-        if project_id not in self._services_by_project:
+    def project_services(self, project_id: int, refresh: bool = False) -> list[Service]:
+        """A project's services, from the on-disk cache; fetched and saved when missing or refresh=True."""
+        if self._services_by_project is None:
+            self._services_by_project = load_services_cache()
+        if refresh or project_id not in self._services_by_project:
             project = self.get_with_services(project_id)
             self._services_by_project[project_id] = {s.id: s.name for s in project.services} if project else {}
-        return self._services_by_project[project_id].get(service_id)
+            self._refreshed.add(project_id)
+            save_services_cache(self._services_by_project)
+        return [Service(id=i, name=n) for i, n in self._services_by_project[project_id].items()]
+
+    def refresh_once(self, project_id: int) -> Optional[list[Service]]:
+        """Refetch a project's services unless already fetched this run; None if already fetched."""
+        if project_id in self._refreshed:
+            return None
+        return self.project_services(project_id, refresh=True)
+
+    def service_name(self, project_id: int, service_id: int) -> Optional[str]:
+        """Name of a service attached to a project (these can be missing from the business-wide service list)."""
+        names = {s.id: s.name for s in self.project_services(project_id)}
+        if service_id not in names and (fresh := self.refresh_once(project_id)) is not None:
+            names = {s.id: s.name for s in fresh}
+        return names.get(service_id)
 
     def clear_cache(self) -> None:
         """Clear cached project data."""
         self._projects_cache = None
-        self._services_by_project = {}
+        self._services_by_project = None
+        self._refreshed = set()

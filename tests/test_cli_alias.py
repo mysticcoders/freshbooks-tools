@@ -6,7 +6,6 @@ import re
 import pytest
 from click.testing import CliRunner
 
-from freshbooks_tools import config as config_module
 from freshbooks_tools.cli import cli
 
 PROJECTS = {"projects": [{"id": 1001001, "title": "Acme Consulting", "client_id": 4}]}
@@ -17,12 +16,10 @@ PROJECT_DETAIL = {"project": {"id": 1001001, "title": "Acme Consulting", "servic
 
 
 @pytest.fixture
-def env(tmp_path, monkeypatch, mock_config):
-    monkeypatch.setattr(config_module, "ALIASES_FILE", tmp_path / "aliases.json")
-    monkeypatch.setattr(config_module, "CONFIG_DIR", tmp_path)
+def env(isolated_config_dir, monkeypatch, mock_config):
     monkeypatch.setattr("freshbooks_tools.cli.load_config", lambda: mock_config)
     monkeypatch.setattr("freshbooks_tools.api.client.load_account_info", lambda: ("ACCT", 42))
-    return tmp_path
+    return isolated_config_dir
 
 
 def mock_projects(httpx_mock):

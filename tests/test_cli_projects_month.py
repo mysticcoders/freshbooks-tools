@@ -60,18 +60,43 @@ class TestProjectsList:
         assert projects[1]["services"] == [{"id": 9, "name": "Dev", "billable": True}]
 
 
-def test_service_name_from_project_is_cached():
+class FakeClient:
+    """Counts project-detail fetches; services come from the class attribute."""
+    calls = 0
+    services = [{"id": 9, "name": "Dev"}]
+
+    def projects_url(self, path):
+        return path
+
+    def get(self, url, params=None):
+        FakeClient.calls += 1
+        return {"project": {"id": 1, "title": "P", "services": FakeClient.services}}
+
+
+@pytest.fixture
+def fake_client():
+    FakeClient.calls = 0
+    FakeClient.services = [{"id": 9, "name": "Dev"}]
+    return FakeClient
+
+
+def test_service_cache_persists_across_runs(fake_client):
     from freshbooks_tools.api.projects import ProjectsAPI
 
-    class FakeClient:
-        calls = 0
-        def projects_url(self, path):
-            return path
-        def get(self, url, params=None):
-            FakeClient.calls += 1
-            return {"project": {"id": 1, "title": "P", "services": [{"id": 9, "name": "Dev"}]}}
+    assert ProjectsAPI(fake_client()).service_name(1, 9) == "Dev"
+    assert ProjectsAPI(fake_client()).service_name(1, 9) == "Dev"  # new "run": read from disk
+    assert fake_client.calls == 1
 
-    api = ProjectsAPI(FakeClient())
-    assert api.service_name(1, 9) == "Dev"
-    assert api.service_name(1, 99) is None
-    assert FakeClient.calls == 1
+
+def test_service_cache_miss_refreshes_once(fake_client):
+    from freshbooks_tools.api.projects import ProjectsAPI
+
+    ProjectsAPI(fake_client()).service_name(1, 9)
+    fake_client.services = [{"id": 9, "name": "Dev"}, {"id": 10, "name": "Meetings"}]
+
+    api = ProjectsAPI(fake_client())
+    assert api.service_name(1, 10) == "Meetings"  # unknown id -> refetch
+    assert api.service_name(1, 99) is None  # still unknown, but no second refetch this run
+    assert fake_client.calls == 2
+    assert ProjectsAPI(fake_client()).service_name(1, 10) == "Meetings"  # saved
+    assert fake_client.calls == 2

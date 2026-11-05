@@ -40,7 +40,7 @@ class TestArAgingCommand:
         )
 
         monkeypatch.setattr(
-            "freshbooks_tools.config.load_account_info",
+            "freshbooks_tools.api.client.load_account_info",
             lambda: ("ABC123", 98765),
         )
 
@@ -112,7 +112,7 @@ class TestRevenueCommand:
         )
 
         monkeypatch.setattr(
-            "freshbooks_tools.config.load_account_info",
+            "freshbooks_tools.api.client.load_account_info",
             lambda: ("ABC123", 98765),
         )
 
