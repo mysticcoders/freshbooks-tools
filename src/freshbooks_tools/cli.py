@@ -691,6 +691,30 @@ def time_add(hours: float, date: Optional[str], project: Optional[str],
         sys.exit(1)
 
 
+@time.command("habits")
+@click.option("--days", default=90, show_default=True, help="How far back to look")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def time_habits(days: int, as_json: bool):
+    """Your projects and the services you usually log to them (most-used first)."""
+    from .mcp_server import ToolError, time_habits as habits  # shares the MCP tool's logic
+
+    try:
+        result = habits(days)
+    except ToolError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+    if as_json:
+        print(json.dumps(result, indent=2))
+        return
+    console.print(f"\n[bold]Last {days} days[/bold] (default alias: {result['default_alias'] or 'none'})\n")
+    for p in result["projects"]:
+        console.print(f"  [bold]{p['project']}[/bold] [dim](id {p['project_id']}, last {p['last_logged']})[/dim]")
+        for s in p["services"]:
+            console.print(f"    {s['hours']:>6.2f}h  {s['service'] or '(no service)'} [dim](id {s['service_id']})[/dim]")
+    if not result["projects"]:
+        console.print("  No time logged.")
+
+
 @time.command("unbilled")
 @click.option("--by-client", is_flag=True, help="Group by client")
 @click.option("--by-project", is_flag=True, help="Group by project")

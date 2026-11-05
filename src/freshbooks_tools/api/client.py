@@ -66,7 +66,7 @@ class FreshBooksClient:
                 retry_after = e.response.headers.get("Retry-After")
                 raise RateLimitError(retry_after=retry_after) from e
             else:
-                raise APIResponseError(f"API error {e.response.status_code}: {e.response.text[:200]}") from e
+                raise APIResponseError(f"API error {e.response.status_code}: {e.response.text[:1000]}") from e
 
     def _make_request(self, method: str, url: str, **kwargs) -> httpx.Response:
         """Make HTTP request with network error handling."""

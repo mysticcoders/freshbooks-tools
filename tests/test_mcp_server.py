@@ -131,3 +131,47 @@ def test_api_errors_reach_the_llm(httpx_mock):
     httpx_mock.add_response(url=PROJECTS, status_code=403, json={"error": "insufficient_scope"})
     with pytest.raises(ToolError, match="insufficient_scope"):
         mcp_server.list_projects()
+
+
+def test_list_invoices_filters_by_client(httpx_mock):
+    httpx_mock.add_response(url=CLIENTS, json={"response": {"result": {"clients": [
+        {"userid": 4, "organization": "Acme"}, {"userid": 5, "organization": "Beta"}], "total": 2}}})
+    httpx_mock.add_response(url=re.compile(r".*/accounting/account/ACCT/invoices/invoices.*"), json={"response": {"result": {
+        "invoices": [{"invoiceid": 1, "customerid": 4, "create_date": "2026-10-01", "status": 2,
+                      "amount": {"amount": "100.00"}, "outstanding": {"amount": "60.00"}, "organization": "Acme"}],
+        "total": 1, "pages": 1}}})
+
+    result = mcp_server.list_invoices(client="acme")
+
+    assert httpx_mock.get_requests()[-1].url.params["search[customerid]"] == "4"
+    assert result["outstanding_in_results"] == "60.00"
+    assert result["invoices"][0]["client"] == "Acme"
+
+
+def test_unbilled_time_totals_by_client_and_project(httpx_mock, monkeypatch):
+    from decimal import Decimal
+
+    monkeypatch.setattr("freshbooks_tools.api.rates.RatesAPI.get_billable_rate",
+                        lambda self, identity_id, service_id=None: Decimal("100") if service_id == 10 else None)
+    httpx_mock.add_response(url=ENTRIES, json={"time_entries": [
+        {**entry(1, 10, 2, 5), "client_id": 4}, {**entry(2, 11, 1, 4), "client_id": 4}], "meta": {"pages": 1, "total": 2}})
+    httpx_mock.add_response(url=PROJECTS, json=PROJECT_LIST)
+    httpx_mock.add_response(url=CLIENTS, json={"response": {"result": {"clients": [{"userid": 4, "organization": "Mystic"}], "total": 1}}})
+
+    result = mcp_server.unbilled_time()
+
+    assert result["by_client_and_project"] == [{"client": "Mystic", "project": "Acme Consulting",
+                                                "hours": 3.0, "amount": "200.00", "hours_without_rate": 1.0}]
+    url = str(httpx_mock.get_requests(url=ENTRIES)[0].url)
+    assert "billed=false" in url and "billable=true" in url
+
+
+def test_time_habits_cli_json(monkeypatch):
+    from click.testing import CliRunner
+    from freshbooks_tools.cli import cli
+
+    monkeypatch.setattr(mcp_server, "time_habits", lambda days: {"today": "2026-11-05", "days": days,
+                                                                 "default_alias": None, "aliases": {}, "projects": []})
+    result = CliRunner().invoke(cli, ["time", "habits", "--days", "7", "--json"])
+    assert result.exit_code == 0, result.output
+    assert json.loads(result.output)["days"] == 7

@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 from contextlib import contextmanager
 from datetime import date, datetime, timedelta
+from decimal import Decimal
 from typing import Any, Iterator, Optional
 
 from mcp.server.mcpserver import MCPServer
@@ -15,6 +16,7 @@ from .api.client import FreshBooksClient
 from .api.expenses import ExpensesAPI
 from .api.invoices import InvoicesAPI
 from .api.projects import ProjectsAPI
+from .api.rates import RatesAPI
 from .api.reports import ReportsAPI
 from .api.team import TeamAPI
 from .api.time_entries import TimeEntriesAPI
@@ -36,6 +38,11 @@ Logging time (e.g. "log 2 hours to acme today"):
 
 If the user says they always log a project the same way, offer set_alias so next time
 `add_time_entry` can take just the alias, or no project at all if it is the default.
+Business questions (owners and admins): list_invoices (pass client for "what does X owe"),
+unbilled_time ("what can we invoice?"), accounts_receivable_aging, profit_and_loss, list_expenses,
+list_time_entries with everyone=true. If a tool reports insufficient_scope or 403, explain that
+the user's FreshBooks role or login may not allow it; they may need `fb auth logout` then `fb auth login`.
+
 Money values are strings to keep exact decimals.
 """
 
@@ -236,7 +243,10 @@ def set_alias(name: str, project: str, service: Optional[str] = None, make_defau
 
 @server.tool(annotations=READ)
 def list_time_entries(start_date: str, end_date: Optional[str] = None, everyone: bool = False) -> dict:
-    """Time entries from start_date to end_date (YYYY-MM-DD, end defaults to today), the user's own unless everyone=True."""
+    """Time entries from start_date to end_date (YYYY-MM-DD, end defaults to today).
+
+    The user's own entries unless everyone=True; seeing the team's needs an owner or admin role.
+    """
     start = _parse_date(start_date, "start_date")
     end = (_parse_date(end_date, "end_date") or datetime.now()).replace(hour=23, minute=59, second=59)
     with _client() as client:
@@ -264,11 +274,77 @@ def list_time_entries(start_date: str, end_date: Optional[str] = None, everyone:
 
 
 @server.tool(annotations=READ)
-def list_invoices(status: Optional[str] = None, date_min: Optional[str] = None, date_max: Optional[str] = None, limit: int = 50) -> dict:
-    """Invoices, newest first. status: draft, sent, viewed, paid, partial, overdue... Dates YYYY-MM-DD."""
-    with _client() as client:
-        invoices, total = InvoicesAPI(client).list_invoices(status=status, date_min=date_min, date_max=date_max, per_page=min(limit, 100))
-        return {"total": total, "invoices": [i.model_dump(mode="json") for i in invoices[:limit]]}
+def list_invoices(
+    client: Optional[str] = None,
+    status: Optional[str] = None,
+    date_min: Optional[str] = None,
+    date_max: Optional[str] = None,
+    limit: int = 50,
+) -> dict:
+    """Invoices, newest first, with amount, paid and outstanding.
+
+    client: client name fragment or id. status: draft, sent, viewed, paid, partial, overdue...
+    Dates YYYY-MM-DD. For "what does X owe", pass client; outstanding_in_results sums the returned invoices,
+    so raise limit if total is larger than the number returned.
+    """
+    with _client() as fb:
+        invoices_api = InvoicesAPI(fb)
+        customer_id = None
+        if client:
+            clients = invoices_api.list_clients()
+            matches = [c for c in clients if str(c.id) == client] or [c for c in clients if client.lower() in c.display_name.lower()]
+            customer_id = _one(matches, "client", client, lambda c: f"{c.display_name} (id {c.id})").id
+        invoices, total = invoices_api.list_invoices(
+            customer_id=customer_id, status=status, date_min=date_min, date_max=date_max, per_page=min(limit, 100))
+        return {
+            "total": total,
+            "outstanding_in_results": str(sum((i.outstanding or 0) for i in invoices[:limit])),
+            "invoices": [{**i.model_dump(mode="json", exclude={"lines", "payments"}), "client": i.client_name, "status_name": i.display_status}
+                         for i in invoices[:limit]],
+        }
+
+
+@server.tool(annotations=READ)
+def unbilled_time(start_date: Optional[str] = None) -> dict:
+    """Billable time not yet invoiced, for the whole team, by client and project, with hours and amounts.
+
+    Answers "what can we invoice?". start_date (YYYY-MM-DD) limits how far back to look.
+    Amounts use the same billable rates as the CLI reports; needs a role that can see the team's time.
+    """
+    with _client() as fb:
+        projects_api = ProjectsAPI(fb)
+        invoices_api = InvoicesAPI(fb)
+        team_api = TeamAPI(fb)
+        rates_api = RatesAPI(fb, team_api, load_config().rates)
+        entries = TimeEntriesAPI(fb).list_all(started_from=_parse_date(start_date, "start_date"), billable=True, billed=False)
+
+        groups: dict[tuple, dict] = {}
+        for e in entries:
+            key = (e.client_id, e.project_id)
+            g = groups.setdefault(key, {"hours": 0.0, "amount": Decimal("0"), "unpriced_hours": 0.0})
+            g["hours"] += float(e.hours)
+            rate = rates_api.get_billable_rate(e.identity_id, e.service_id)
+            if rate:
+                g["amount"] += e.hours * rate
+            else:
+                g["unpriced_hours"] += float(e.hours)
+
+        rows = []
+        for (client_id, project_id), g in groups.items():
+            project = projects_api.get_by_id(project_id) if project_id else None
+            rows.append({
+                "client": invoices_api.get_client_name(client_id) if client_id else None,
+                "project": project.title if project else None,
+                "hours": round(g["hours"], 2),
+                "amount": str(g["amount"].quantize(Decimal("0.01"))),
+                "hours_without_rate": round(g["unpriced_hours"], 2),
+            })
+        rows.sort(key=lambda r: -Decimal(r["amount"]))
+        return {
+            "total_hours": round(sum(r["hours"] for r in rows), 2),
+            "total_amount": str(sum((Decimal(r["amount"]) for r in rows), Decimal("0"))),
+            "by_client_and_project": rows,
+        }
 
 
 @server.tool(annotations=READ)
