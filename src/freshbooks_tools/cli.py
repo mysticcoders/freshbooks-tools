@@ -7,6 +7,7 @@ from datetime import datetime
 from decimal import Decimal
 from difflib import get_close_matches
 from io import StringIO
+from pathlib import Path
 from typing import Optional
 
 import click
@@ -22,8 +23,10 @@ from .api.team import TeamAPI
 from .api.time_entries import TimeEntriesAPI
 from .auth import start_oauth_flow
 from .config import (
+    ENV_FILE,
     clear_lookup_cache,
     delete_tokens,
+    install_env_file,
     load_account_info,
     load_aliases,
     load_config,
@@ -68,6 +71,20 @@ def cli():
 def auth():
     """Authentication commands."""
     pass
+
+
+@auth.command("setup")
+@click.argument("env_file", default=".env", type=click.Path(exists=True, dir_okay=False, path_type=Path))
+def auth_setup(env_file: Path):
+    """Copy a .env with FreshBooks credentials to the config dir, so fb works from any directory."""
+    if ENV_FILE.exists() and not click.confirm(f"{ENV_FILE} exists. Overwrite?"):
+        return
+    try:
+        target = install_env_file(env_file)
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+    console.print(f"[green]Credentials copied to {target}[/green]")
 
 
 @auth.command("login")

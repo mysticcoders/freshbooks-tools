@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -9,13 +10,14 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
-from dotenv import load_dotenv
+from dotenv import dotenv_values, find_dotenv, load_dotenv
 from platformdirs import user_config_dir
 
 APP_NAME = "freshbooks-tools"
 CONFIG_DIR = Path(user_config_dir(APP_NAME))
 TOKENS_FILE = CONFIG_DIR / "tokens.json"
 RATES_FILE = CONFIG_DIR / "rates.yaml"
+ENV_FILE = CONFIG_DIR / ".env"
 
 
 @dataclass
@@ -132,11 +134,10 @@ def _write_secure_json(path: Path, data: dict) -> None:
 
 def load_env_config() -> tuple[str, str, str]:
     """Load client credentials and redirect URI from .env file."""
-    config_env = CONFIG_DIR / ".env"
-    if config_env.exists():
-        load_dotenv(config_env)
+    if ENV_FILE.exists():
+        load_dotenv(ENV_FILE)
     else:
-        load_dotenv()
+        load_dotenv(find_dotenv(usecwd=True))  # search from the cwd, not the installed package
 
     client_id = os.getenv("FRESHBOOKS_CLIENT_ID")
     client_secret = os.getenv("FRESHBOOKS_CLIENT_SECRET")
@@ -144,10 +145,23 @@ def load_env_config() -> tuple[str, str, str]:
 
     if not client_id or not client_secret:
         raise ValueError(
-            "Missing FRESHBOOKS_CLIENT_ID or FRESHBOOKS_CLIENT_SECRET in .env file"
+            "Missing FRESHBOOKS_CLIENT_ID or FRESHBOOKS_CLIENT_SECRET. "
+            f"Put them in {ENV_FILE} (run 'fb auth setup path/to/.env' to copy one there) or in ./.env"
         )
 
     return client_id, client_secret, redirect_uri
+
+
+def install_env_file(source: Path) -> Path:
+    """Copy a .env with FreshBooks credentials into the config dir (0600), so an installed fb finds it."""
+    values = dotenv_values(source)
+    missing = [k for k in ("FRESHBOOKS_CLIENT_ID", "FRESHBOOKS_CLIENT_SECRET") if not values.get(k)]
+    if missing:
+        raise ValueError(f"{source} is missing {', '.join(missing)}")
+    ensure_config_dir()
+    shutil.copyfile(source, ENV_FILE)
+    os.chmod(ENV_FILE, 0o600)
+    return ENV_FILE
 
 
 def load_tokens() -> Optional[Tokens]:
