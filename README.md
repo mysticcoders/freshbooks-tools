@@ -45,7 +45,10 @@ To install the CLI globally and use `fb` from anywhere:
 
 ```bash
 uv tool install .
+fb auth setup .env   # copy credentials to the config dir so fb works from any directory
 ```
+
+`fb` reads credentials from the config dir (`~/Library/Application Support/freshbooks-tools/.env` on macOS, `~/.config/freshbooks-tools/.env` on Linux) first, then from `.env` in the current directory.
 
 ## OAuth Setup
 
