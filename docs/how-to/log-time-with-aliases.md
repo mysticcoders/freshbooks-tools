@@ -30,6 +30,19 @@ fb time add -h 2 -d 2026-11-03           # a past date
 
 `-p` accepts an alias, a project id, or part of a project name, in that order. If a name matches several projects, `fb` asks which one.
 
+## Add to today's entry, or start a new one
+
+If you already have an unbilled entry for that day with the same project, service and billable setting, `fb time add` adds the hours to it rather than creating another:
+
+```bash
+fb time add -h 2          # Added 2.00 hours to "Acme Consulting" (Development)
+fb time add -h 1          # Updated entry on "Acme Consulting" (Development): 2.00h -> 3.00h
+fb time add -h 1 -n "review"   # the note is appended to the entry's note
+fb time add -h 1 --new    # a separate entry
+```
+
+Billed entries are never changed.
+
 ## Manage aliases
 
 ```bash

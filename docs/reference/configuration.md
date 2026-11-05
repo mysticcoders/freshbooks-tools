@@ -74,7 +74,14 @@ members:
     name: "Joseph Ottinger"     # for your reference only
     cost_rate: 75.00
     billable_rate: 200.00
+
+# billable rate by project id (see fb projects list)
+projects:
+  1001001:
+    billable_rate: 125.00
 ```
+
+A `members` billable rate takes precedence over a `projects` one. The full order is in [Rates](../explanation/rates.md).
 
 ## OAuth scopes
 

@@ -458,7 +458,7 @@ Options:
   --help  Show this message and exit.
 
 Commands:
-  add       Add a new time entry.
+  add       Log time: adds to your unbilled entry for the same day, project and...
   export    Export time entries to CSV.
   habits    Your projects and the services you usually log to them (most-used first).
   list      List time entries with optional filters.
@@ -471,7 +471,8 @@ Commands:
 ```text
 Usage: fb time add [OPTIONS]
 
-  Add a new time entry.
+  Log time: adds to your unbilled entry for the same day, project and service, or
+  creates one.
 
 Options:
   -h, --hours FLOAT            Hours worked  [required]
@@ -482,6 +483,8 @@ Options:
                                service)
   -n, --note TEXT              Note/comment
   --billable / --not-billable  Mark as billable
+  --new                        Create a separate entry instead of adding to today's
+                               matching one
   --help                       Show this message and exit.
 ```
 

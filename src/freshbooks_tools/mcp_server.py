@@ -34,7 +34,9 @@ Logging time (e.g. "log 2 hours to acme today"):
 3. If the user did not name a service, use that project's usual_service from time_habits.
    If the project has no history, call list_projects and ask which service to use.
 4. Call add_time_entry with the project id and service id. Omit date for today; otherwise YYYY-MM-DD.
-5. Tell the user what was filed: project, service, hours, date.
+   It adds to the user's existing entry for that day, project and service if there is one, so
+   "add an hour to X" just works. Pass new_entry=true only if the user asks for a separate entry.
+5. Tell the user what happened: created, or updated from hours_before to hours_now.
 
 If the user says they always log a project the same way, offer set_alias so next time
 `add_time_entry` can take just the alias, or no project at all if it is the default.
@@ -164,8 +166,13 @@ def add_time_entry(
     date: Optional[str] = None,
     note: Optional[str] = None,
     billable: bool = True,
+    new_entry: bool = False,
 ) -> dict:
-    """File a time entry for the logged-in user.
+    """Log time for the logged-in user.
+
+    Adds the hours to the user's unbilled entry for the same day, project, service and billable flag
+    if there is one ("add an hour to X"), otherwise creates an entry. new_entry=True always creates one;
+    use it only when the user asks for a separate entry.
 
     project: an alias, project id, or project name fragment; omit to use the default alias.
     service: a service id or name fragment; omit to use the alias's service (if any).
@@ -196,7 +203,8 @@ def add_time_entry(
             svc = _one(projects_api.match_services(selected.id, service), "service", service, lambda s: f"{s.name} (id {s.id})")
             service_id, service_name = svc.id, svc.name
 
-        entry = TimeEntriesAPI(client).create(
+        entry, hours_before = TimeEntriesAPI(client).add_or_extend(
+            identity_id=client.current_identity_id(),
             started_at=entry_date,
             duration_seconds=int(hours * 3600),
             project_id=selected.id,
@@ -204,14 +212,18 @@ def add_time_entry(
             service_id=service_id,
             note=note,
             billable=billable,
+            new_entry=new_entry,
         )
         return {
+            "action": "created" if hours_before is None else "updated",
             "entry_id": entry.id,
             "date": entry_date.date().isoformat(),
-            "hours": hours,
+            "hours_added": hours,
+            "hours_before": float(hours_before) if hours_before is not None else None,
+            "hours_now": float(entry.hours),
             "project": selected.title,
             "service": service_name,
-            "note": note,
+            "note": entry.note,
             "billable": billable,
         }
 
@@ -323,7 +335,7 @@ def unbilled_time(start_date: Optional[str] = None) -> dict:
             key = (e.client_id, e.project_id)
             g = groups.setdefault(key, {"hours": 0.0, "amount": Decimal("0"), "unpriced_hours": 0.0})
             g["hours"] += float(e.hours)
-            rate = rates_api.get_billable_rate(e.identity_id, e.service_id)
+            rate = rates_api.get_billable_rate(e.identity_id, e.service_id, e.project_id)
             if rate:
                 g["amount"] += e.hours * rate
             else:
@@ -340,7 +352,10 @@ def unbilled_time(start_date: Optional[str] = None) -> dict:
                 "hours_without_rate": round(g["unpriced_hours"], 2),
             })
         rows.sort(key=lambda r: -Decimal(r["amount"]))
+        unpriced = sum(r["hours_without_rate"] for r in rows)
         return {
+            **({"note": f"{unpriced:g} hours have no visible billable rate. FreshBooks hides rates from project "
+                        "members; set one in rates.yaml (members or projects) to price them."} if unpriced else {}),
             "total_hours": round(sum(r["hours"] for r in rows), 2),
             "total_amount": str(sum((Decimal(r["amount"]) for r in rows), Decimal("0"))),
             "by_client_and_project": rows,

@@ -78,6 +78,7 @@ class RatesConfig:
     default_cost_rate: Optional[Decimal] = None
     default_billable_rate: Optional[Decimal] = None
     members: dict[int, dict] = field(default_factory=dict)
+    projects: dict[int, Decimal] = field(default_factory=dict)  # project id -> billable rate
 
     def get_cost_rate(self, email: str) -> Optional[Decimal]:
         """Get cost rate for a team member by email."""
@@ -248,12 +249,19 @@ def load_rates_config() -> RatesConfig:
                 member_info["billable_rate"] = Decimal(str(member_data["billable_rate"]))
             members[int(identity_id)] = member_info
 
+        projects = {
+            int(project_id): Decimal(str(project_data["billable_rate"]))
+            for project_id, project_data in (data.get("projects") or {}).items()
+            if project_data and project_data.get("billable_rate")
+        }
+
         return RatesConfig(
             cost_rates=cost_rates,
             billable_rates=billable_rates,
             default_cost_rate=default_cost,
             default_billable_rate=default_billable,
             members=members,
+            projects=projects,
         )
     except (yaml.YAMLError, KeyError):
         return RatesConfig()

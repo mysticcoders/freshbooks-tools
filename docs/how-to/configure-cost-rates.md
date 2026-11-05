@@ -24,4 +24,6 @@ FreshBooks exposes billable rates but not cost rates (what a person costs you). 
    fb time summary -m 10
    ```
 
+If your billable amounts show as zero because FreshBooks hides your rate, add `billable_rate` the same way, under `members` for one rate everywhere or under `projects` for a per-project rate.
+
 The full file format is in [Configuration › rates.yaml](../reference/configuration.md#ratesyaml). How `fb` chooses between rates is in [Rates](../explanation/rates.md).

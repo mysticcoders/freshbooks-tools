@@ -45,7 +45,7 @@ The rest of this page is written for the agent.
    fb time add --hours 2 --project 1001001 --service 2002002 --note "..."
    ```
 
-   Add `--date YYYY-MM-DD` for a day other than today. The output confirms project, service, date and entry id.
+   Add `--date YYYY-MM-DD` for a day other than today. If the user already has an unbilled entry that day for the same project and service, the hours are added to it and the output says `Updated entry ...: 2.00h -> 3.00h`; otherwise it says `Added ...`. So "add an hour to X" is just `fb time add --hours 1 ...`. Pass `--new` only if the user asks for a separate entry.
 
 5. If the user wants this to be the default:
 

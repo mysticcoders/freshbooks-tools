@@ -228,7 +228,7 @@ def time_list(teammate: Optional[str], month: Optional[str], billable: bool, sho
                 service_name = ((entry.project_id and projects_api.service_name(entry.project_id, entry.service_id))
                                 or rates_api.get_service_name(entry.service_id)) if entry.service_id else "-"
 
-                billable_rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id) if entry.billable else None
+                billable_rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id, entry.project_id) if entry.billable else None
                 cost_rate = rates_api.get_cost_rate(entry.identity_id)
 
                 rows.append(TimeEntryRow(
@@ -344,7 +344,7 @@ def time_summary(month: str, by_teammate: bool, by_client: bool, as_json: bool):
 
                     for entry in group_entries:
                         if entry.billable:
-                            rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id)
+                            rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id, entry.project_id)
                             if rate:
                                 total_billable += entry.hours * rate
                         cost_rate = rates_api.get_cost_rate(entry.identity_id)
@@ -375,7 +375,7 @@ def time_summary(month: str, by_teammate: bool, by_client: bool, as_json: bool):
 
                     for entry in group_entries:
                         if entry.billable:
-                            rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id)
+                            rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id, entry.project_id)
                             if rate:
                                 total_billable += entry.hours * rate
 
@@ -391,7 +391,7 @@ def time_summary(month: str, by_teammate: bool, by_client: bool, as_json: bool):
 
                 for entry in entries:
                     if entry.billable:
-                        rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id)
+                        rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id, entry.project_id)
                         if rate:
                             total_billable += entry.hours * rate
                     cost_rate = rates_api.get_cost_rate(entry.identity_id)
@@ -421,7 +421,7 @@ def _print_time_summary_json(entries, month, by_teammate, by_client, team_api, r
 
     for entry in entries:
         if entry.billable:
-            rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id)
+            rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id, entry.project_id)
             if rate:
                 total_billable += entry.hours * rate
         cost_rate = rates_api.get_cost_rate(entry.identity_id)
@@ -447,7 +447,7 @@ def _print_time_summary_json(entries, month, by_teammate, by_client, team_api, r
             g_cost = Decimal("0")
             for entry in group_entries:
                 if entry.billable:
-                    rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id)
+                    rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id, entry.project_id)
                     if rate:
                         g_billable += entry.hours * rate
                 cr = rates_api.get_cost_rate(entry.identity_id)
@@ -516,7 +516,7 @@ def time_export(month: str, fmt: str, output: Optional[str]):
                 service_name = ((entry.project_id and projects_api.service_name(entry.project_id, entry.service_id))
                                 or rates_api.get_service_name(entry.service_id)) if entry.service_id else ""
 
-                billable_rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id) if entry.billable else None
+                billable_rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id, entry.project_id) if entry.billable else None
                 cost_rate = rates_api.get_cost_rate(entry.identity_id)
 
                 billable_amount = entry.hours * billable_rate if billable_rate else None
@@ -610,9 +610,10 @@ def _select_service(projects_api: ProjectsAPI, project, text: str):
 @click.option("--service", "-s", help="Service id or name fragment (overrides the alias's service)")
 @click.option("--note", "-n", help="Note/comment")
 @click.option("--billable/--not-billable", default=True, help="Mark as billable")
+@click.option("--new", "new_entry", is_flag=True, help="Create a separate entry instead of adding to today's matching one")
 def time_add(hours: float, date: Optional[str], project: Optional[str],
-             service: Optional[str], note: Optional[str], billable: bool):
-    """Add a new time entry."""
+             service: Optional[str], note: Optional[str], billable: bool, new_entry: bool):
+    """Log time: adds to your unbilled entry for the same day, project and service, or creates one."""
     try:
         config = load_config()
 
@@ -663,7 +664,8 @@ def time_add(hours: float, date: Optional[str], project: Optional[str],
             elif alias and alias.get("service_id"):
                 service_id, service_name = alias["service_id"], alias.get("service")
 
-            entry = time_api.create(
+            entry, hours_before = time_api.add_or_extend(
+                identity_id=client.current_identity_id(),
                 started_at=entry_date,
                 duration_seconds=duration_seconds,
                 project_id=selected_project.id,
@@ -671,15 +673,17 @@ def time_add(hours: float, date: Optional[str], project: Optional[str],
                 service_id=service_id,
                 note=note,
                 billable=billable,
+                new_entry=new_entry,
             )
 
-            msg = f"Added {hours:.2f} hours to \"{selected_project.title}\""
-            if service_name:
-                msg += f" ({service_name})"
-            console.print(f"[green]{msg}[/green]")
+            target = f"\"{selected_project.title}\"" + (f" ({service_name})" if service_name else "")
+            if hours_before is None:
+                console.print(f"[green]Added {hours:.2f} hours to {target}[/green]")
+            else:
+                console.print(f"[green]Updated entry on {target}: {hours_before:.2f}h -> {entry.hours:.2f}h[/green]")
 
-            if note:
-                console.print(f"[dim]Note: {note}[/dim]")
+            if entry.note:
+                console.print(f"[dim]Note: {entry.note}[/dim]")
             console.print(f"[dim]Date: {entry_date.strftime('%Y-%m-%d')}[/dim]")
             console.print(f"[dim]Entry ID: {entry.id}[/dim]")
 
@@ -774,7 +778,7 @@ def time_unbilled(by_client: bool, by_project: bool, by_teammate: bool,
             total_amount = Decimal("0")
 
             for e in entries:
-                rate = rates_api.get_billable_rate(e.identity_id, e.service_id)
+                rate = rates_api.get_billable_rate(e.identity_id, e.service_id, e.project_id)
                 if rate:
                     total_amount += e.hours * rate
 
@@ -792,7 +796,7 @@ def time_unbilled(by_client: bool, by_project: bool, by_teammate: bool,
                     if key not in groups:
                         groups[key] = {"hours": 0, "amount": 0}
                     groups[key]["hours"] += float(e.hours)
-                    rate = rates_api.get_billable_rate(e.identity_id, e.service_id)
+                    rate = rates_api.get_billable_rate(e.identity_id, e.service_id, e.project_id)
                     if rate:
                         groups[key]["amount"] += float(e.hours * rate)
 
@@ -830,7 +834,7 @@ def time_unbilled(by_client: bool, by_project: bool, by_teammate: bool,
                 group_hours = sum(float(e.hours) for e in group_entries)
                 group_amount = Decimal("0")
                 for e in group_entries:
-                    rate = rates_api.get_billable_rate(e.identity_id, e.service_id)
+                    rate = rates_api.get_billable_rate(e.identity_id, e.service_id, e.project_id)
                     if rate:
                         group_amount += e.hours * rate
 
