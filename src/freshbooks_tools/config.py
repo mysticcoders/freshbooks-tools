@@ -279,3 +279,21 @@ def load_account_info() -> tuple[Optional[str], Optional[int]]:
         return data.get("account_id"), data.get("business_id")
     except (json.JSONDecodeError, KeyError):
         return None, None
+
+
+ALIASES_FILE = CONFIG_DIR / "aliases.json"
+
+
+def load_aliases() -> dict:
+    """Load project/service aliases: {"default": name|None, "aliases": {name: {...}}}."""
+    if not ALIASES_FILE.exists():
+        return {"default": None, "aliases": {}}
+    with open(ALIASES_FILE) as f:
+        data = json.load(f)
+    return {"default": data.get("default"), "aliases": data.get("aliases", {})}
+
+
+def save_aliases(data: dict) -> None:
+    """Save project/service aliases."""
+    ensure_config_dir()
+    _write_secure_json(ALIASES_FILE, data)

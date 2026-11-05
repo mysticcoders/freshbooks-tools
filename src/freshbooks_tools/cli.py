@@ -24,8 +24,10 @@ from .auth import start_oauth_flow
 from .config import (
     delete_tokens,
     load_account_info,
+    load_aliases,
     load_config,
     load_tokens,
+    save_aliases,
 )
 from .ui.invoice_browser import run_invoice_browser
 from .ui.tables import ARAgingTable, ClientARFormatter, ExpenseTable, ExpenseSummaryTable, InvoiceTable, RevenueSummaryTable, TimeEntryRow, TimeEntryTable
@@ -170,6 +172,7 @@ def time_list(teammate: Optional[str], month: Optional[str], billable: bool, sho
             team_api = TeamAPI(client)
             rates_api = RatesAPI(client, team_api, config.rates)
             invoices_api = InvoicesAPI(client)
+            projects_api = ProjectsAPI(client)
 
             identity_id = None
             if teammate:
@@ -201,8 +204,10 @@ def time_list(teammate: Optional[str], month: Optional[str], billable: bool, sho
             for entry in entries:
                 teammate_name = team_api.get_team_member_name(entry.identity_id)
                 client_name = invoices_api.get_client_name(entry.client_id) if entry.client_id else "-"
-                project_name = f"Project {entry.project_id}" if entry.project_id else "-"
-                service_name = rates_api.get_service_name(entry.service_id) if entry.service_id else "-"
+                proj = projects_api.get_by_id(entry.project_id) if entry.project_id else None
+                project_name = proj.title if proj else (f"Project {entry.project_id}" if entry.project_id else "-")
+                service_name = ((entry.project_id and projects_api.service_name(entry.project_id, entry.service_id))
+                                or rates_api.get_service_name(entry.service_id)) if entry.service_id else "-"
 
                 billable_rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id) if entry.billable else None
                 cost_rate = rates_api.get_cost_rate(entry.identity_id)
@@ -469,6 +474,7 @@ def time_export(month: str, fmt: str, output: Optional[str]):
             team_api = TeamAPI(client)
             rates_api = RatesAPI(client, team_api, config.rates)
             invoices_api = InvoicesAPI(client)
+            projects_api = ProjectsAPI(client)
 
             entries = time_api.list_by_month(year, mon)
 
@@ -486,8 +492,10 @@ def time_export(month: str, fmt: str, output: Optional[str]):
             for entry in entries:
                 teammate_name = team_api.get_team_member_name(entry.identity_id)
                 client_name = invoices_api.get_client_name(entry.client_id) if entry.client_id else ""
-                project_name = f"Project {entry.project_id}" if entry.project_id else ""
-                service_name = rates_api.get_service_name(entry.service_id) if entry.service_id else ""
+                proj = projects_api.get_by_id(entry.project_id) if entry.project_id else None
+                project_name = proj.title if proj else (f"Project {entry.project_id}" if entry.project_id else "")
+                service_name = ((entry.project_id and projects_api.service_name(entry.project_id, entry.service_id))
+                                or rates_api.get_service_name(entry.service_id)) if entry.service_id else ""
 
                 billable_rate = rates_api.get_billable_rate(entry.identity_id, entry.service_id) if entry.billable else None
                 cost_rate = rates_api.get_cost_rate(entry.identity_id)
@@ -521,14 +529,77 @@ def time_export(month: str, fmt: str, output: Optional[str]):
         sys.exit(1)
 
 
+def _select_project(projects_api: ProjectsAPI, text: str):
+    """Pick a project by id or name fragment; prompt when several match, exit when none do."""
+    if text.isdigit() and (by_id := projects_api.get_by_id(int(text))):
+        return by_id
+    matching_projects = projects_api.find_by_name(text)
+
+    if not matching_projects:
+        all_projects = projects_api.list()
+        console.print(f"[red]No projects found matching '{text}'[/red]")
+        if all_projects:
+            console.print("\n[yellow]Available projects:[/yellow]")
+            for p in all_projects[:10]:
+                console.print(f"  - {p.title}")
+            if len(all_projects) > 10:
+                console.print(f"  ... and {len(all_projects) - 10} more")
+        sys.exit(1)
+    if len(matching_projects) == 1:
+        return matching_projects[0]
+
+    console.print(f"[yellow]Multiple projects match '{text}':[/yellow]")
+    for i, p in enumerate(matching_projects, 1):
+        console.print(f"  {i}. {p.title}")
+    choice = click.prompt(
+        f"Select project [1-{len(matching_projects)}]",
+        type=click.IntRange(1, len(matching_projects))
+    )
+    return matching_projects[choice - 1]
+
+
+def _select_service(projects_api: ProjectsAPI, project, text: str):
+    """Pick one of a project's services by id or name fragment; prompt when several match, exit when none do."""
+    project_with_services = projects_api.get_with_services(project.id)
+    services = project_with_services.services if project_with_services else []
+    if text.isdigit():
+        by_id = [s for s in services if s.id == int(text)]
+        if by_id:
+            return by_id[0]
+    text_lower = text.lower()
+    matching_services = [s for s in services if text_lower in s.name.lower()]
+
+    if not matching_services:
+        console.print(f"[red]No services found matching '{text}' for project '{project.title}'[/red]")
+        if services:
+            console.print("\n[yellow]Available services for this project:[/yellow]")
+            for s in services:
+                console.print(f"  - {s.name}")
+        else:
+            console.print("[yellow]This project has no services configured.[/yellow]")
+        sys.exit(1)
+    if len(matching_services) == 1:
+        return matching_services[0]
+
+    console.print(f"[yellow]Multiple services match '{text}':[/yellow]")
+    for i, s in enumerate(matching_services, 1):
+        console.print(f"  {i}. {s.name}")
+    choice = click.prompt(
+        f"Select service [1-{len(matching_services)}]",
+        type=click.IntRange(1, len(matching_services))
+    )
+    return matching_services[choice - 1]
+
+
+
 @time.command("add")
 @click.option("--hours", "-h", required=True, type=float, help="Hours worked")
 @click.option("--date", "-d", default=None, help="Date (YYYY-MM-DD), defaults to today")
-@click.option("--project", "-p", required=True, help="Project name or fragment")
-@click.option("--service", "-s", help="Service/category name or fragment")
+@click.option("--project", "-p", help="Alias, project id, or name fragment (default: the default alias)")
+@click.option("--service", "-s", help="Service id or name fragment (overrides the alias's service)")
 @click.option("--note", "-n", help="Note/comment")
 @click.option("--billable/--not-billable", default=True, help="Mark as billable")
-def time_add(hours: float, date: Optional[str], project: str,
+def time_add(hours: float, date: Optional[str], project: Optional[str],
              service: Optional[str], note: Optional[str], billable: bool):
     """Add a new time entry."""
     try:
@@ -557,62 +628,29 @@ def time_add(hours: float, date: Optional[str], project: str,
             rates_api = RatesAPI(client, team_api, config.rates)
             time_api = TimeEntriesAPI(client)
 
-            matching_projects = projects_api.find_by_name(project)
-
-            if not matching_projects:
-                all_projects = projects_api.list()
-                console.print(f"[red]No projects found matching '{project}'[/red]")
-                if all_projects:
-                    console.print("\n[yellow]Available projects:[/yellow]")
-                    for p in all_projects[:10]:
-                        console.print(f"  - {p.title}")
-                    if len(all_projects) > 10:
-                        console.print(f"  ... and {len(all_projects) - 10} more")
+            aliases = load_aliases()
+            name = project or aliases["default"]
+            if not name:
+                console.print("[red]No --project given and no default alias set.[/red]")
+                console.print("[dim]See 'fb projects list' and 'fb alias set --help'.[/dim]")
                 sys.exit(1)
-            elif len(matching_projects) == 1:
-                selected_project = matching_projects[0]
-            else:
-                console.print(f"[yellow]Multiple projects match '{project}':[/yellow]")
-                for i, p in enumerate(matching_projects, 1):
-                    console.print(f"  {i}. {p.title}")
 
-                choice = click.prompt(
-                    f"Select project [1-{len(matching_projects)}]",
-                    type=click.IntRange(1, len(matching_projects))
-                )
-                selected_project = matching_projects[choice - 1]
+            alias = aliases["aliases"].get(name)
+            if alias:
+                selected_project = projects_api.get_by_id(alias["project_id"])
+                if not selected_project:
+                    console.print(f"[red]Alias '{name}' points to project {alias['project_id']}, which no longer exists.[/red]")
+                    sys.exit(1)
+            else:
+                selected_project = _select_project(projects_api, name)
 
             service_id = None
             service_name = None
             if service:
-                project_with_services = projects_api.get_with_services(selected_project.id)
-                services = project_with_services.services if project_with_services else []
-                service_lower = service.lower()
-                matching_services = [s for s in services if service_lower in s.name.lower()]
-
-                if not matching_services:
-                    console.print(f"[red]No services found matching '{service}' for project '{selected_project.title}'[/red]")
-                    if services:
-                        console.print("\n[yellow]Available services for this project:[/yellow]")
-                        for s in services:
-                            console.print(f"  - {s.name}")
-                    else:
-                        console.print("[yellow]This project has no services configured.[/yellow]")
-                    sys.exit(1)
-                elif len(matching_services) == 1:
-                    service_id = matching_services[0].id
-                    service_name = matching_services[0].name
-                else:
-                    console.print(f"[yellow]Multiple services match '{service}':[/yellow]")
-                    for i, s in enumerate(matching_services, 1):
-                        console.print(f"  {i}. {s.name}")
-
-                    choice = click.prompt(
-                        f"Select service [1-{len(matching_services)}]",
-                        type=click.IntRange(1, len(matching_services))
-                    )
-                    service_id = matching_services[choice - 1].id
-                    service_name = matching_services[choice - 1].name
+                selected_service = _select_service(projects_api, selected_project, service)
+                service_id, service_name = selected_service.id, selected_service.name
+            elif alias and alias.get("service_id"):
+                service_id, service_name = alias["service_id"], alias.get("service")
 
             entry = time_api.create(
                 started_at=entry_date,
@@ -1574,6 +1612,105 @@ def projects_list(as_json: bool):
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         sys.exit(1)
+
+
+@cli.group()
+def alias():
+    """Name a project + service so 'fb time add' can use it.
+
+    \b
+    Workflow:
+      1. fb projects list            (find the project and service ids)
+      2. fb alias set zeroe-dev -p 13383459 -s 4478828 --default
+      3. fb time add -h 2            (uses the default alias)
+         fb time add -h 1 -p zeroe-dev -n "standup"
+    """
+    pass
+
+
+@alias.command("set")
+@click.argument("name")
+@click.option("--project", "-p", required=True, help="Project id or name fragment")
+@click.option("--service", "-s", help="Service id or name fragment (optional)")
+@click.option("--default", "make_default", is_flag=True, help="Also make this the default alias")
+def alias_set(name: str, project: str, service: Optional[str], make_default: bool):
+    """Create or replace an alias."""
+    try:
+        config = load_config()
+
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run 'fb auth login' first.[/red]")
+            sys.exit(1)
+
+        with FreshBooksClient(config) as client:
+            projects_api = ProjectsAPI(client)
+            selected_project = _select_project(projects_api, project)
+            selected_service = _select_service(projects_api, selected_project, service) if service else None
+
+        aliases = load_aliases()
+        aliases["aliases"][name] = {
+            "project_id": selected_project.id,
+            "project": selected_project.title,
+            "service_id": selected_service.id if selected_service else None,
+            "service": selected_service.name if selected_service else None,
+        }
+        if make_default:
+            aliases["default"] = name
+        save_aliases(aliases)
+
+        target = selected_project.title + (f" / {selected_service.name}" if selected_service else "")
+        console.print(f"[green]{name}[/green] -> {target}" + (" [dim](default)[/dim]" if make_default else ""))
+
+    except click.Abort:
+        console.print("\n[yellow]Cancelled.[/yellow]")
+        sys.exit(1)
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+
+@alias.command("list")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def alias_list(as_json: bool):
+    """List aliases."""
+    aliases = load_aliases()
+    if as_json:
+        print(json.dumps(aliases, indent=2))
+        return
+    if not aliases["aliases"]:
+        console.print("No aliases. See 'fb alias --help'.")
+        return
+    for name, a in sorted(aliases["aliases"].items()):
+        marker = " [dim](default)[/dim]" if name == aliases["default"] else ""
+        target = a["project"] + (f" / {a['service']}" if a.get("service") else "")
+        console.print(f"  [bold]{name}[/bold] -> {target}{marker}")
+
+
+@alias.command("default")
+@click.argument("name")
+def alias_default(name: str):
+    """Make an existing alias the default for 'fb time add'."""
+    aliases = load_aliases()
+    if name not in aliases["aliases"]:
+        console.print(f"[red]No alias named '{name}'.[/red]")
+        sys.exit(1)
+    aliases["default"] = name
+    save_aliases(aliases)
+    console.print(f"Default alias is now [green]{name}[/green]")
+
+
+@alias.command("rm")
+@click.argument("name")
+def alias_rm(name: str):
+    """Remove an alias."""
+    aliases = load_aliases()
+    if aliases["aliases"].pop(name, None) is None:
+        console.print(f"[red]No alias named '{name}'.[/red]")
+        sys.exit(1)
+    if aliases["default"] == name:
+        aliases["default"] = None
+    save_aliases(aliases)
+    console.print(f"Removed {name}")
 
 
 @cli.command("rates-init")

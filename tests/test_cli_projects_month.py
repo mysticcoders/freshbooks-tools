@@ -58,3 +58,20 @@ class TestProjectsList:
         assert projects[0]["client"] is None
         assert projects[1]["client"] == "Acme"
         assert projects[1]["services"] == [{"id": 9, "name": "Dev", "billable": True}]
+
+
+def test_service_name_from_project_is_cached():
+    from freshbooks_tools.api.projects import ProjectsAPI
+
+    class FakeClient:
+        calls = 0
+        def projects_url(self, path):
+            return path
+        def get(self, url, params=None):
+            FakeClient.calls += 1
+            return {"project": {"id": 1, "title": "P", "services": [{"id": 9, "name": "Dev"}]}}
+
+    api = ProjectsAPI(FakeClient())
+    assert api.service_name(1, 9) == "Dev"
+    assert api.service_name(1, 99) is None
+    assert FakeClient.calls == 1
