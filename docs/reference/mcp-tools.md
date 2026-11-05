@@ -19,7 +19,9 @@ Logging time (e.g. "log 2 hours to acme today"):
 3. If the user did not name a service, use that project's usual_service from time_habits.
    If the project has no history, call list_projects and ask which service to use.
 4. Call add_time_entry with the project id and service id. Omit date for today; otherwise YYYY-MM-DD.
-5. Tell the user what was filed: project, service, hours, date.
+   It adds to the user's existing entry for that day, project and service if there is one, so
+   "add an hour to X" just works. Pass new_entry=true only if the user asks for a separate entry.
+5. Tell the user what happened: created, or updated from hours_before to hours_now.
 
 If the user says they always log a project the same way, offer set_alias so next time
 `add_time_entry` can take just the alias, or no project at all if it is the default.
@@ -27,6 +29,10 @@ Business questions (owners and admins): list_invoices (pass client for "what doe
 unbilled_time ("what can we invoice?"), accounts_receivable_aging, profit_and_loss, list_expenses,
 list_time_entries with everyone=true. If a tool reports insufficient_scope or 403, explain that
 the user's FreshBooks role or login may not allow it; they may need `fb auth logout` then `fb auth login`.
+
+Rates: if amounts come back as zero or hours_without_rate is non-zero, FreshBooks is probably hiding
+the rate (it does for project members). Ask the user their rate and offer set_billable_rate.
+get_billable_rate shows which rate applies and where it comes from.
 
 Money values are strings to keep exact decimals.
 ```
@@ -41,7 +47,11 @@ Outstanding receivables by client and age bucket, as of end_date (YYYY-MM-DD, de
 
 ## `add_time_entry` (write)
 
-File a time entry for the logged-in user.
+Log time for the logged-in user.
+
+Adds the hours to the user's unbilled entry for the same day, project, service and billable flag
+if there is one ("add an hour to X"), otherwise creates an entry. new_entry=True always creates one;
+use it only when the user asks for a separate entry.
 
 project: an alias, project id, or project name fragment; omit to use the default alias.
 service: a service id or name fragment; omit to use the alias's service (if any).
@@ -55,6 +65,20 @@ date: YYYY-MM-DD; omit for today.
 | `date` | string/null | `null` |
 | `note` | string/null | `null` |
 | `billable` | boolean | `true` |
+| `new_entry` | boolean | `false` |
+
+## `get_billable_rate` (read)
+
+The billable rate that applies to time logged by the user (or a teammate), and where it comes from.
+
+project: alias, id or name fragment; service: id or name fragment; teammate: name fragment (default: the user).
+source is e.g. "rates.yaml: members" or "FreshBooks: project billing method"; rate null means none is set.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `project` | string/null | `null` |
+| `service` | string/null | `null` |
+| `teammate` | string/null | `null` |
 
 ## `get_invoice` (read)
 
@@ -143,6 +167,20 @@ make_default: also use this alias when add_time_entry gets no project.
 | `project` | string | required |
 | `service` | string/null | `null` |
 | `make_default` | boolean | `false` |
+
+## `set_billable_rate` (write)
+
+Save a billable rate (per hour) in rates.yaml, used by reports and unbilled_time.
+
+No project: the rate for the user (or teammate) on every project; it takes precedence over everything else.
+project (alias, id or name fragment): the rate for that project, for anyone without a personal rate.
+Give project or teammate, not both. This only changes local reports, not FreshBooks.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `rate` | number | required |
+| `project` | string/null | `null` |
+| `teammate` | string/null | `null` |
 
 ## `time_habits` (read)
 

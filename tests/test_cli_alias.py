@@ -64,6 +64,8 @@ def test_time_add_uses_default_alias(env, httpx_mock):
     (env / "aliases.json").write_text(json.dumps({"default": "acme-dev", "aliases": {"acme-dev": {
         "project_id": 1001001, "project": "Acme Consulting", "service_id": 2002002, "service": "Development"}}}))
     httpx_mock.add_response(url=re.compile(r".*/timetracking/business/42/projects.*"), json=PROJECTS)
+    httpx_mock.add_response(url=re.compile(r".*/auth/api/v1/users/me$"), json={"response": {"id": 5}})
+    httpx_mock.add_response(url=re.compile(r".*/time_entries\?.*"), json={"time_entries": [], "meta": {"pages": 1, "total": 0}})
     httpx_mock.add_response(
         method="POST",
         url=re.compile(r".*/timetracking/business/42/time_entries$"),

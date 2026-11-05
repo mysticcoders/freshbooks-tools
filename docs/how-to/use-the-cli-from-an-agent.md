@@ -18,7 +18,7 @@ The rest of this page is written for the agent.
 - `-h` on `fb time add` means `--hours`, not help. Use `--help` for help.
 - Pass ids rather than name fragments to `fb time add` and `fb alias set`. If a fragment matches several projects or services, `fb` prompts, and with no terminal the command fails with "Cancelled".
 - Dates are `YYYY-MM-DD`. `-m 10` means October of the current year; `-m 2025-10` for another year.
-- Ask the user before running commands that write: `fb time add`, `fb alias set/default/rm`.
+- Ask the user before running commands that write: `fb time add`, `fb alias set/default/rm`, `fb rates set`.
 
 ## Logging time ("log 2 hours to acme today")
 
@@ -45,7 +45,7 @@ The rest of this page is written for the agent.
    fb time add --hours 2 --project 1001001 --service 2002002 --note "..."
    ```
 
-   Add `--date YYYY-MM-DD` for a day other than today. The output confirms project, service, date and entry id.
+   Add `--date YYYY-MM-DD` for a day other than today. If the user already has an unbilled entry that day for the same project and service, the hours are added to it and the output says `Updated entry ...: 2.00h -> 3.00h`; otherwise it says `Added ...`. So "add an hour to X" is just `fb time add --hours 1 ...`. Pass `--new` only if the user asks for a separate entry.
 
 5. If the user wants this to be the default:
 
@@ -54,6 +54,17 @@ The rest of this page is written for the agent.
    ```
 
    After that, `fb time add --hours 2` files to it.
+
+## Rates
+
+If amounts are zero or `null`, FreshBooks is probably hiding the user's rate. Check with `fb rates show --json`; if `rate` is null, ask the user their hourly rate, then (after confirming):
+
+```bash
+fb rates set 125                 # their rate on every project
+fb rates set 140 --project 1001001   # a rate for one project
+```
+
+This only affects `fb`'s reports, not FreshBooks.
 
 ## Questions
 
@@ -73,6 +84,7 @@ The rest of this page is written for the agent.
 | Revenue | `fb reports revenue --start-date 2026-01-01 --end-date 2026-03-31 --json` |
 | Expenses | `fb expenses list --start-date 2026-10-01 --json` |
 | Team members | `fb team --json` |
+| Which billable rate applies | `fb rates show --json` (add `-p <project>`) |
 
 Every command and option is in the [CLI reference](../reference/cli.md).
 

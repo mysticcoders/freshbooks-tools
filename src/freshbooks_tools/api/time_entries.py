@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta
+from decimal import Decimal
 from typing import Optional
 
 from rich.console import Console
@@ -214,6 +215,7 @@ class TimeEntriesAPI:
         billable: Optional[bool] = None,
         billed: Optional[bool] = None,
         note: Optional[str] = None,
+        duration_seconds: Optional[int] = None,
     ) -> bool:
         """Update a time entry."""
         url = self.client.timetracking_url(f"time_entries/{time_entry_id}")
@@ -226,10 +228,66 @@ class TimeEntriesAPI:
             payload["time_entry"]["billed"] = billed
         if note is not None:
             payload["time_entry"]["note"] = note
+        if duration_seconds is not None:
+            payload["time_entry"]["duration"] = duration_seconds
 
-        response = self.client.client.put(url, headers=self.client.headers, json=payload)
-        response.raise_for_status()
+        self.client.put(url, data=payload)
         return True
+
+    def find_mergeable(
+        self,
+        identity_id: int,
+        day: datetime,
+        project_id: int,
+        service_id: Optional[int],
+        billable: bool,
+    ) -> Optional[TimeEntry]:
+        """The user's most recent unbilled entry on that day with the same project, service and billable flag."""
+        entries = self.list_all(
+            identity_id=identity_id,
+            project_id=project_id,
+            started_from=day.replace(hour=0, minute=0, second=0, microsecond=0) - timedelta(days=1),
+            started_to=day.replace(hour=23, minute=59, second=59, microsecond=0) + timedelta(days=1),
+        )
+        matches = [
+            e for e in entries
+            if e.started_at.date() == day.date() and e.identity_id == identity_id
+            and e.project_id == project_id and e.service_id == service_id
+            and e.billable == billable and not e.billed
+        ]
+        return max(matches, key=lambda e: (e.started_at, e.id), default=None)
+
+    def add_or_extend(
+        self,
+        identity_id: int,
+        started_at: datetime,
+        duration_seconds: int,
+        project_id: int,
+        client_id: Optional[int],
+        service_id: Optional[int],
+        note: Optional[str],
+        billable: bool,
+        new_entry: bool = False,
+    ) -> tuple[TimeEntry, Optional[Decimal]]:
+        """Add hours to a matching entry from the same day, or create one.
+
+        Returns (entry, hours before) where hours before is None when a new entry was created.
+        """
+        existing = None if new_entry else self.find_mergeable(identity_id, started_at, project_id, service_id, billable)
+        if existing is None:
+            entry = self.create(
+                started_at=started_at, duration_seconds=duration_seconds, project_id=project_id,
+                client_id=client_id, service_id=service_id, note=note, billable=billable,
+            )
+            return entry, None
+
+        before = existing.hours
+        merged_note = existing.note
+        if note:
+            merged_note = f"{existing.note}; {note}" if existing.note else note
+        self.update(existing.id, duration_seconds=existing.duration + duration_seconds,
+                    note=merged_note if merged_note != existing.note else None)
+        return existing.model_copy(update={"duration": existing.duration + duration_seconds, "note": merged_note}), before
 
     def create(
         self,

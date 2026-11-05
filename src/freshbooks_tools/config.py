@@ -78,6 +78,7 @@ class RatesConfig:
     default_cost_rate: Optional[Decimal] = None
     default_billable_rate: Optional[Decimal] = None
     members: dict[int, dict] = field(default_factory=dict)
+    projects: dict[int, Decimal] = field(default_factory=dict)  # project id -> billable rate
 
     def get_cost_rate(self, email: str) -> Optional[Decimal]:
         """Get cost rate for a team member by email."""
@@ -189,6 +190,35 @@ def delete_tokens() -> None:
         TOKENS_FILE.unlink()
 
 
+def set_billable_rate(rate: Decimal, identity_id: Optional[int] = None, project_id: Optional[int] = None,
+                      name: Optional[str] = None) -> None:
+    """Write a billable rate to rates.yaml, for a person (members) or a project (projects).
+
+    Keeps the file's other settings; YAML comments are not preserved.
+    """
+    if (identity_id is None) == (project_id is None):
+        raise ValueError("Give exactly one of identity_id or project_id")
+    if rate <= 0:
+        raise ValueError("Rate must be more than zero")
+    data = {}
+    if RATES_FILE.exists():
+        with open(RATES_FILE) as f:
+            data = yaml.safe_load(f) or {}
+    section, key = ("members", identity_id) if identity_id is not None else ("projects", project_id)
+    entries = data.get(section) or {}
+    entry = next((v for k, v in entries.items() if int(k) == key), None) or {}
+    entries = {int(k): v for k, v in entries.items() if int(k) != key}
+    entry["billable_rate"] = float(rate)
+    if name and section == "members":
+        entry.setdefault("name", name)
+    entries[key] = entry
+    data[section] = entries
+    ensure_config_dir()
+    with open(RATES_FILE, "w") as f:
+        yaml.safe_dump(data, f, sort_keys=False)
+    os.chmod(RATES_FILE, 0o600)
+
+
 def load_rates_config() -> RatesConfig:
     """Load rates configuration from YAML file.
 
@@ -248,12 +278,19 @@ def load_rates_config() -> RatesConfig:
                 member_info["billable_rate"] = Decimal(str(member_data["billable_rate"]))
             members[int(identity_id)] = member_info
 
+        projects = {
+            int(project_id): Decimal(str(project_data["billable_rate"]))
+            for project_id, project_data in (data.get("projects") or {}).items()
+            if project_data and project_data.get("billable_rate")
+        }
+
         return RatesConfig(
             cost_rates=cost_rates,
             billable_rates=billable_rates,
             default_cost_rate=default_cost,
             default_billable_rate=default_billable,
             members=members,
+            projects=projects,
         )
     except (yaml.YAMLError, KeyError):
         return RatesConfig()

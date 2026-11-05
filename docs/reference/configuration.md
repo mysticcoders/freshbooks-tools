@@ -30,7 +30,7 @@ Read from `.env` in the config directory if it exists, otherwise from `.env` in 
 | `account.json` | first API call | Account id and business id |
 | `aliases.json` | `fb alias`, MCP `set_alias` | Aliases and the default alias |
 | `lookup_cache.json` | most commands | Cached names, team, clients, services and rates |
-| `rates.yaml` | `fb rates-init`, you | Cost and billable rate overrides |
+| `rates.yaml` | `fb rates-init`, `fb rates set`, MCP `set_billable_rate`, you | Cost and billable rate overrides |
 
 `fb auth logout` deletes `tokens.json` and `lookup_cache.json`. `fb cache clear` deletes `lookup_cache.json`.
 
@@ -74,7 +74,14 @@ members:
     name: "Joseph Ottinger"     # for your reference only
     cost_rate: 75.00
     billable_rate: 200.00
+
+# billable rate by project id (see fb projects list)
+projects:
+  1001001:
+    billable_rate: 125.00
 ```
+
+A `members` billable rate takes precedence over a `projects` one. The full order is in [Rates](../explanation/rates.md).
 
 ## OAuth scopes
 
