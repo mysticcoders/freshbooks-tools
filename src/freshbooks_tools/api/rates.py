@@ -19,6 +19,7 @@ class RatesAPI:
         self._services_cache: Optional[dict[int, Service]] = None
         self._service_rates_cache: dict[int, Optional[Decimal]] = {}
         self._team_member_rates_cache: Optional[dict[int, Decimal]] = None
+        self._services_refreshed = False
 
     def get_team_member_rates(self) -> dict[int, Decimal]:
         """Get billable rates for all team members from API.
@@ -30,7 +31,7 @@ class RatesAPI:
 
         url = self.client.timetracking_url("team_member_rates")
         try:
-            response = self.client.get(url)
+            response = self.client.get_cached(url)
             rates_data = response.get("team_member_rates", [])
 
             self._team_member_rates_cache = {}
@@ -50,10 +51,10 @@ class RatesAPI:
         rates = self.get_team_member_rates()
         return rates.get(identity_id)
 
-    def list_services(self) -> list[Service]:
+    def list_services(self, refresh: bool = False) -> list[Service]:
         """List all services."""
         url = self.client.comments_url("services")
-        response = self.client.get(url)
+        response = self.client.get_cached(url, refresh=refresh)
         services_data = response.get("services", [])
 
         services = []
@@ -89,7 +90,7 @@ class RatesAPI:
 
         url = self.client.comments_url(f"service/{service_id}/rate")
         try:
-            response = self.client.get(url)
+            response = self.client.get_cached(url)
             rate_data = response.get("service_rate", {})
             if rate_data.get("rate"):
                 rate = Decimal(str(rate_data["rate"]))
@@ -104,6 +105,9 @@ class RatesAPI:
     def get_service_name(self, service_id: int) -> str:
         """Get the name of a service."""
         services = self.get_services_by_id()
+        if service_id not in services and not self._services_refreshed:
+            self._services_refreshed = True
+            services = self._services_cache = {s.id: s for s in self.list_services(refresh=True)}
         if service_id in services:
             return services[service_id].name
         return f"Service {service_id}"

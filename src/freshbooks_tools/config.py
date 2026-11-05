@@ -279,3 +279,46 @@ def load_account_info() -> tuple[Optional[str], Optional[int]]:
         return data.get("account_id"), data.get("business_id")
     except (json.JSONDecodeError, KeyError):
         return None, None
+
+
+ALIASES_FILE = CONFIG_DIR / "aliases.json"
+
+
+def load_aliases() -> dict:
+    """Load project/service aliases: {"default": name|None, "aliases": {name: {...}}}."""
+    if not ALIASES_FILE.exists():
+        return {"default": None, "aliases": {}}
+    with open(ALIASES_FILE) as f:
+        data = json.load(f)
+    return {"default": data.get("default"), "aliases": data.get("aliases", {})}
+
+
+def save_aliases(data: dict) -> None:
+    """Save project/service aliases."""
+    ensure_config_dir()
+    _write_secure_json(ALIASES_FILE, data)
+
+
+LOOKUP_CACHE_FILE = CONFIG_DIR / "lookup_cache.json"
+
+
+def load_lookup_cache() -> dict:
+    """Load cached lookup responses: {request key: {"at": epoch seconds, "data": response}}."""
+    if not LOOKUP_CACHE_FILE.exists():
+        return {}
+    try:
+        with open(LOOKUP_CACHE_FILE) as f:
+            return json.load(f)
+    except json.JSONDecodeError:
+        return {}  # a corrupt cache is just refetched
+
+
+def save_lookup_cache(cache: dict) -> None:
+    """Save cached lookup responses."""
+    ensure_config_dir()
+    _write_secure_json(LOOKUP_CACHE_FILE, cache)
+
+
+def clear_lookup_cache() -> None:
+    """Delete the lookup cache (it holds names, emails and rates)."""
+    LOOKUP_CACHE_FILE.unlink(missing_ok=True)

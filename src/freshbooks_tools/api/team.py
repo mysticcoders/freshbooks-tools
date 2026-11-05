@@ -15,13 +15,14 @@ class TeamAPI:
         self._team_cache: Optional[dict[int, TeamMember]] = None
         self._staff_cache: Optional[dict[int, Staff]] = None
         self._project_members_cache: Optional[dict[int, dict]] = None
+        self._refresh = False  # True after a lookup miss: refetch instead of reading the disk cache
 
     def list_team_members(self) -> list[TeamMember]:
         """List all team members from auth API."""
         _, business_id = self.client.ensure_account_info()
         url = f"{self.client.BASE_AUTH_URL}/businesses/{business_id}/team_members"
 
-        response = self.client.get(url)
+        response = self.client.get_cached(url, refresh=self._refresh)
         members_data = response.get("team_members", [])
 
         members = []
@@ -57,7 +58,7 @@ class TeamAPI:
         members_by_id: dict[int, dict] = {}
 
         url = self.client.timetracking_url("projects")
-        response = self.client.get(url, params={"per_page": 100})
+        response = self.client.get_cached(url, params={"per_page": 100}, refresh=self._refresh)
         projects = response.get("projects", [])
 
         for project in projects:
@@ -67,7 +68,7 @@ class TeamAPI:
 
             try:
                 detail_url = self.client.timetracking_url(f"projects/{project_id}")
-                detail = self.client.get(detail_url)
+                detail = self.client.get_cached(detail_url, refresh=self._refresh)
                 project_data = detail.get("project", {})
                 group = project_data.get("group", {})
                 members = group.get("members", [])
@@ -93,7 +94,7 @@ class TeamAPI:
         """List all staff from accounting API (deprecated but has rates)."""
         url = self.client.accounting_url("users/staffs")
 
-        response = self.client.get(url)
+        response = self.client.get_cached(url, refresh=self._refresh)
         staff_response = response.get("response", {}).get("result", {})
         staff_data = staff_response.get("staffs", [])
 
@@ -146,8 +147,24 @@ class TeamAPI:
 
         return self._staff_cache
 
+    def _refresh_once(self) -> bool:
+        """Refetch team, staff and project members once per run (after a lookup miss)."""
+        if self._refresh:
+            return False
+        self._refresh = True
+        self._team_cache = self._staff_cache = self._project_members_cache = None
+        return True
+
+    def _known(self, identity_id: int) -> bool:
+        return (identity_id in self.get_team_by_identity_id()
+                or identity_id in self.get_staff_by_id()
+                or identity_id in self.list_project_members())
+
     def get_team_member_name(self, identity_id: int) -> str:
         """Get display name for a team member by identity_id."""
+        if not self._known(identity_id):
+            self._refresh_once()
+
         team = self.get_team_by_identity_id()
 
         if identity_id in team:
@@ -167,6 +184,9 @@ class TeamAPI:
 
     def get_team_member_email(self, identity_id: int) -> Optional[str]:
         """Get email for a team member by identity_id."""
+        if not self._known(identity_id):
+            self._refresh_once()
+
         team = self.get_team_by_identity_id()
 
         if identity_id in team:
@@ -184,6 +204,12 @@ class TeamAPI:
 
     def find_identity_by_name(self, name: str) -> Optional[int]:
         """Find identity_id by name (case-insensitive partial match)."""
+        found = self._find_identity_by_name(name)
+        if found is None and self._refresh_once():
+            found = self._find_identity_by_name(name)
+        return found
+
+    def _find_identity_by_name(self, name: str) -> Optional[int]:
         name_lower = name.lower()
 
         team = self.get_team_by_identity_id()
