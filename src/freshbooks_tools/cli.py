@@ -40,16 +40,18 @@ RESOLUTION_MAP = {
 
 
 def parse_month(month_str: str) -> tuple[int, int]:
-    """Parse month string in YYYY-MM format."""
+    """Parse month string in YYYY-MM format, or a bare MM meaning the current year."""
     try:
         parts = month_str.split("-")
-        year = int(parts[0])
-        month = int(parts[1])
+        if len(parts) == 1:
+            year, month = datetime.now().year, int(parts[0])
+        else:
+            year, month = int(parts[0]), int(parts[1])
         if not (1 <= month <= 12):
             raise ValueError("Month must be between 1 and 12")
         return year, month
     except (IndexError, ValueError) as e:
-        raise click.BadParameter(f"Invalid month format. Use YYYY-MM (e.g., 2024-01): {e}")
+        raise click.BadParameter(f"Invalid month format. Use YYYY-MM or MM (e.g., 2024-01 or 10): {e}")
 
 
 @click.group()
@@ -149,7 +151,7 @@ def time():
 
 @time.command("list")
 @click.option("--teammate", "-t", help="Filter by teammate name (partial match)")
-@click.option("--month", "-m", help="Filter by month (YYYY-MM format)")
+@click.option("--month", "-m", help="Filter by month (YYYY-MM, or MM for this year)")
 @click.option("--billable/--all", default=True, help="Show only billable entries (default) or all")
 @click.option("--show-notes", is_flag=True, help="Show entry notes")
 @click.option("--no-rates", is_flag=True, help="Hide rate columns")
@@ -267,7 +269,7 @@ def time_list(teammate: Optional[str], month: Optional[str], billable: bool, sho
 
 
 @time.command("summary")
-@click.option("--month", "-m", required=True, help="Month to summarize (YYYY-MM format)")
+@click.option("--month", "-m", required=True, help="Month to summarize (YYYY-MM, or MM for this year)")
 @click.option("--by-teammate", is_flag=True, help="Group by teammate")
 @click.option("--by-client", is_flag=True, help="Group by client")
 @click.option("--json", "as_json", is_flag=True, help="Output as JSON")
@@ -448,7 +450,7 @@ def _print_time_summary_json(entries, month, by_teammate, by_client, team_api, r
 
 
 @time.command("export")
-@click.option("--month", "-m", required=True, help="Month to export (YYYY-MM format)")
+@click.option("--month", "-m", required=True, help="Month to export (YYYY-MM, or MM for this year)")
 @click.option("--format", "-f", "fmt", type=click.Choice(["csv"]), default="csv", help="Export format")
 @click.option("--output", "-o", help="Output file (default: stdout)")
 def time_export(month: str, fmt: str, output: Optional[str]):
@@ -1511,6 +1513,63 @@ def expenses_show(expense_id: int, as_json: bool):
 
             expense_table = ExpenseTable(console)
             expense_table.print_expense_detail(expense, expenses_api.get_category_name)
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+
+@cli.group()
+def projects():
+    """Project commands."""
+    pass
+
+
+@projects.command("list")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def projects_list(as_json: bool):
+    """List projects with their client and services (ids included, for aliasing)."""
+    try:
+        config = load_config()
+
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run 'fb auth login' first.[/red]")
+            sys.exit(1)
+
+        with FreshBooksClient(config) as client:
+            projects_api = ProjectsAPI(client)
+            invoices_api = InvoicesAPI(client)
+
+            result = []
+            for p in sorted(projects_api.list(), key=lambda p: p.title.lower()):
+                # the list endpoint omits services; one call per project fetches them
+                detailed = projects_api.get_with_services(p.id)
+                services = detailed.services if detailed else []
+                result.append({
+                    "id": p.id,
+                    "title": p.title,
+                    "client_id": p.client_id,
+                    "client": invoices_api.get_client_name(p.client_id) if p.client_id else None,
+                    "active": p.active,
+                    "billable": p.billable,
+                    "services": [{"id": s.id, "name": s.name, "billable": s.billable} for s in services],
+                })
+
+            if as_json:
+                print(json.dumps({"projects": result}, indent=2))
+                return
+
+            console.print(f"\n[bold]Projects ({len(result)} total)[/bold]\n")
+            for p in result:
+                status = "" if p["active"] else " [red](inactive)[/red]"
+                console.print(f"  [bold]{p['title']}[/bold] [dim](id {p['id']})[/dim]{status}")
+                console.print(f"    Client: {p['client'] or 'N/A'}")
+                if p["services"]:
+                    for s in p["services"]:
+                        console.print(f"    - {s['name']} [dim](id {s['id']})[/dim]")
+                else:
+                    console.print("    [dim]No services[/dim]")
+                console.print()
 
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
