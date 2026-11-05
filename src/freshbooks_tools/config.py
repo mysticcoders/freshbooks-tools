@@ -299,22 +299,26 @@ def save_aliases(data: dict) -> None:
     _write_secure_json(ALIASES_FILE, data)
 
 
-SERVICES_CACHE_FILE = CONFIG_DIR / "services_cache.json"
+LOOKUP_CACHE_FILE = CONFIG_DIR / "lookup_cache.json"
 
 
-def load_services_cache() -> dict[int, dict[int, str]]:
-    """Load cached project services: {project_id: {service_id: name}}."""
-    if not SERVICES_CACHE_FILE.exists():
+def load_lookup_cache() -> dict:
+    """Load cached lookup responses: {request key: {"at": epoch seconds, "data": response}}."""
+    if not LOOKUP_CACHE_FILE.exists():
         return {}
     try:
-        with open(SERVICES_CACHE_FILE) as f:
-            data = json.load(f)
+        with open(LOOKUP_CACHE_FILE) as f:
+            return json.load(f)
     except json.JSONDecodeError:
         return {}  # a corrupt cache is just refetched
-    return {int(p): {int(s): name for s, name in svcs.items()} for p, svcs in data.items()}
 
 
-def save_services_cache(cache: dict[int, dict[int, str]]) -> None:
-    """Save cached project services."""
+def save_lookup_cache(cache: dict) -> None:
+    """Save cached lookup responses."""
     ensure_config_dir()
-    _write_secure_json(SERVICES_CACHE_FILE, cache)
+    _write_secure_json(LOOKUP_CACHE_FILE, cache)
+
+
+def clear_lookup_cache() -> None:
+    """Delete the lookup cache (it holds names, emails and rates)."""
+    LOOKUP_CACHE_FILE.unlink(missing_ok=True)

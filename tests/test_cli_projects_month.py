@@ -60,43 +60,89 @@ class TestProjectsList:
         assert projects[1]["services"] == [{"id": 9, "name": "Dev", "billable": True}]
 
 
-class FakeClient:
-    """Counts project-detail fetches; services come from the class attribute."""
-    calls = 0
-    services = [{"id": 9, "name": "Dev"}]
-
-    def projects_url(self, path):
-        return path
-
-    def get(self, url, params=None):
-        FakeClient.calls += 1
-        return {"project": {"id": 1, "title": "P", "services": FakeClient.services}}
+PROJECT_URL = re.compile(r".*/projects/business/42/project/1$")
 
 
 @pytest.fixture
-def fake_client():
-    FakeClient.calls = 0
-    FakeClient.services = [{"id": 9, "name": "Dev"}]
-    return FakeClient
+def fb_client(mock_config, monkeypatch):
+    from freshbooks_tools.api.client import FreshBooksClient
+
+    monkeypatch.setattr("freshbooks_tools.api.client.load_account_info", lambda: ("ACCT", 42))
+    return lambda: FreshBooksClient(mock_config)
 
 
-def test_service_cache_persists_across_runs(fake_client):
+def project_detail(*services):
+    return {"project": {"id": 1, "title": "P", "services": [{"id": i, "name": n} for i, n in services]}}
+
+
+def test_lookup_cache_persists_across_runs(fb_client, httpx_mock):
     from freshbooks_tools.api.projects import ProjectsAPI
 
-    assert ProjectsAPI(fake_client()).service_name(1, 9) == "Dev"
-    assert ProjectsAPI(fake_client()).service_name(1, 9) == "Dev"  # new "run": read from disk
-    assert fake_client.calls == 1
+    httpx_mock.add_response(url=PROJECT_URL, json=project_detail((9, "Dev")))
+    assert ProjectsAPI(fb_client()).service_name(1, 9) == "Dev"
+    assert ProjectsAPI(fb_client()).service_name(1, 9) == "Dev"  # new "run": read from disk
+    assert len(httpx_mock.get_requests()) == 1
 
 
-def test_service_cache_miss_refreshes_once(fake_client):
+def test_lookup_cache_expires(fb_client, httpx_mock, monkeypatch):
+    from freshbooks_tools.api import client as client_module
     from freshbooks_tools.api.projects import ProjectsAPI
 
-    ProjectsAPI(fake_client()).service_name(1, 9)
-    fake_client.services = [{"id": 9, "name": "Dev"}, {"id": 10, "name": "Meetings"}]
+    httpx_mock.add_response(url=PROJECT_URL, json=project_detail((9, "Dev")), is_reusable=True)
+    ProjectsAPI(fb_client()).service_name(1, 9)
+    now = client_module.time.time()
+    monkeypatch.setattr(client_module.time, "time", lambda: now + client_module.LOOKUP_TTL_SECONDS + 1)
+    ProjectsAPI(fb_client()).service_name(1, 9)
+    assert len(httpx_mock.get_requests()) == 2
 
-    api = ProjectsAPI(fake_client())
+
+def test_service_miss_refreshes_once(fb_client, httpx_mock):
+    from freshbooks_tools.api.projects import ProjectsAPI
+
+    httpx_mock.add_response(url=PROJECT_URL, json=project_detail((9, "Dev")))
+    ProjectsAPI(fb_client()).service_name(1, 9)
+
+    httpx_mock.add_response(url=PROJECT_URL, json=project_detail((9, "Dev"), (10, "Meetings")))
+    api = ProjectsAPI(fb_client())
     assert api.service_name(1, 10) == "Meetings"  # unknown id -> refetch
     assert api.service_name(1, 99) is None  # still unknown, but no second refetch this run
-    assert fake_client.calls == 2
-    assert ProjectsAPI(fake_client()).service_name(1, 10) == "Meetings"  # saved
-    assert fake_client.calls == 2
+    assert len(httpx_mock.get_requests()) == 2
+    assert ProjectsAPI(fb_client()).service_name(1, 10) == "Meetings"  # saved
+    assert len(httpx_mock.get_requests()) == 2
+
+
+def test_unknown_client_refreshes_once(fb_client, httpx_mock):
+    from freshbooks_tools.api.invoices import InvoicesAPI
+
+    clients_url = re.compile(r".*/accounting/account/ACCT/users/clients.*")
+    httpx_mock.add_response(url=clients_url, json={"response": {"result": {"clients": [{"userid": 7, "organization": "Acme"}], "total": 1}}})
+    assert InvoicesAPI(fb_client()).get_client_name(7) == "Acme"
+
+    httpx_mock.add_response(url=clients_url, json={"response": {"result": {"clients": [
+        {"userid": 7, "organization": "Acme"}, {"userid": 8, "organization": "Beta"}], "total": 2}}})
+    api = InvoicesAPI(fb_client())
+    assert api.get_client_name(7) == "Acme"  # cached, no request
+    assert api.get_client_name(8) == "Beta"  # miss -> refetch
+    assert api.get_client_name(99) == "Client 99"  # no second refetch
+    assert len(httpx_mock.get_requests()) == 2
+
+
+def test_unknown_teammate_refreshes_once(fb_client, httpx_mock):
+    from freshbooks_tools.api.team import TeamAPI
+
+    team_url = re.compile(r".*/auth/api/v1/businesses/42/team_members$")
+    staff_url = re.compile(r".*/accounting/account/ACCT/users/staffs$")
+    projects_url = re.compile(r".*/timetracking/business/42/projects\?.*")
+    member = {"uuid": "u5", "identity_id": 5, "first_name": "Ann", "last_name": "A"}
+
+    httpx_mock.add_response(url=team_url, json={"team_members": [member]})
+    assert TeamAPI(fb_client()).get_team_member_name(5) == "Ann A"
+
+    httpx_mock.add_response(url=team_url, json={"team_members": [
+        member, {"uuid": "u6", "identity_id": 6, "first_name": "Bob", "last_name": "B"}]})
+    httpx_mock.add_response(url=staff_url, json={"response": {"result": {"staffs": []}}})
+    httpx_mock.add_response(url=projects_url, json={"projects": []})
+    api = TeamAPI(fb_client())
+    assert api.get_team_member_name(5) == "Ann A"  # cached
+    assert api.get_team_member_name(6) == "Bob B"  # miss: staff + project members checked, then refetch
+    assert len(httpx_mock.get_requests(url=team_url)) == 2

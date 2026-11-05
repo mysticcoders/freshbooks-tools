@@ -4,68 +4,68 @@ from __future__ import annotations
 
 from typing import Optional
 
-from ..config import load_services_cache, save_services_cache
 from ..models import Project, Service
 from .client import FreshBooksClient
 
 
 class ProjectsAPI:
-    """API for querying projects."""
+    """API for querying projects.
+
+    Lookups go through the client's on-disk cache. A project or service that isn't
+    found triggers one refetch per run, in case it was added since the cache was filled.
+    """
 
     def __init__(self, client: FreshBooksClient):
         self.client = client
         self._projects_cache: Optional[list[Project]] = None
-        self._services_by_project: Optional[dict[int, dict[int, str]]] = None  # loaded from disk on first use
-        self._refreshed: set[int] = set()
+        self._refreshed: set = set()  # project ids, and "list", refetched this run
 
-    def list(self, include_internal: bool = False) -> list[Project]:
+    def list(self, include_internal: bool = False, refresh: bool = False) -> list[Project]:
         """List all projects, cached."""
-        if self._projects_cache is not None:
-            projects = self._projects_cache
-        else:
+        if self._projects_cache is None or refresh:
             url = self.client.timetracking_url("projects")
-            response = self.client.get(url, params={"per_page": 100})
-            projects_data = response.get("projects", [])
-            projects = [Project.from_api(p) for p in projects_data]
-            self._projects_cache = projects
+            response = self.client.get_cached(url, params={"per_page": 100}, refresh=refresh)
+            self._projects_cache = [Project.from_api(p) for p in response.get("projects", [])]
+            if refresh:
+                self._refreshed.add("list")
 
         if include_internal:
-            return projects
-        return [p for p in projects if not p.internal]
+            return self._projects_cache
+        return [p for p in self._projects_cache if not p.internal]
+
+    def _refresh_list_once(self) -> bool:
+        if "list" in self._refreshed:
+            return False
+        self.list(refresh=True)
+        return True
 
     def find_by_name(self, fragment: str, include_internal: bool = False) -> list[Project]:
         """Find projects matching a name fragment (case-insensitive)."""
-        projects = self.list(include_internal=include_internal)
-        fragment_lower = fragment.lower()
-        return [p for p in projects if fragment_lower in p.title.lower()]
+        def find():
+            return [p for p in self.list(include_internal=include_internal) if fragment.lower() in p.title.lower()]
+        return find() or (self._refresh_list_once() and find()) or []
 
     def get_by_id(self, project_id: int) -> Optional[Project]:
-        """Get a project by ID from cache."""
-        projects = self.list(include_internal=True)
-        for p in projects:
-            if p.id == project_id:
-                return p
-        return None
+        """Get a project by ID."""
+        def find():
+            return next((p for p in self.list(include_internal=True) if p.id == project_id), None)
+        return find() or (self._refresh_list_once() and find()) or None
 
-    def get_with_services(self, project_id: int) -> Optional[Project]:
+    def get_with_services(self, project_id: int, refresh: bool = False) -> Optional[Project]:
         """Fetch a project by ID with its associated services."""
         url = self.client.projects_url(f"project/{project_id}")
-        response = self.client.get(url)
+        response = self.client.get_cached(url, refresh=refresh)
+        if refresh:
+            self._refreshed.add(project_id)
         project_data = response.get("project")
         if project_data:
             return Project.from_api(project_data)
         return None
 
     def project_services(self, project_id: int, refresh: bool = False) -> list[Service]:
-        """A project's services, from the on-disk cache; fetched and saved when missing or refresh=True."""
-        if self._services_by_project is None:
-            self._services_by_project = load_services_cache()
-        if refresh or project_id not in self._services_by_project:
-            project = self.get_with_services(project_id)
-            self._services_by_project[project_id] = {s.id: s.name for s in project.services} if project else {}
-            self._refreshed.add(project_id)
-            save_services_cache(self._services_by_project)
-        return [Service(id=i, name=n) for i, n in self._services_by_project[project_id].items()]
+        """A project's services."""
+        project = self.get_with_services(project_id, refresh=refresh)
+        return project.services if project else []
 
     def refresh_once(self, project_id: int) -> Optional[list[Service]]:
         """Refetch a project's services unless already fetched this run; None if already fetched."""
@@ -81,7 +81,6 @@ class ProjectsAPI:
         return names.get(service_id)
 
     def clear_cache(self) -> None:
-        """Clear cached project data."""
+        """Clear in-memory project data."""
         self._projects_cache = None
-        self._services_by_project = None
         self._refreshed = set()

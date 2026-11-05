@@ -17,13 +17,13 @@ def load_fixture(name: str) -> dict:
 
 @pytest.fixture(autouse=True)
 def isolated_config_dir(tmp_path, monkeypatch):
-    """Keep tests away from the real config dir (tokens, aliases, services cache)."""
+    """Keep tests away from the real config dir (tokens, aliases, lookup cache)."""
     from freshbooks_tools import config
 
     monkeypatch.setattr(config, "CONFIG_DIR", tmp_path)
     monkeypatch.setattr(config, "TOKENS_FILE", tmp_path / "tokens.json")
     monkeypatch.setattr(config, "ALIASES_FILE", tmp_path / "aliases.json")
-    monkeypatch.setattr(config, "SERVICES_CACHE_FILE", tmp_path / "services_cache.json")
+    monkeypatch.setattr(config, "LOOKUP_CACHE_FILE", tmp_path / "lookup_cache.json")
     return tmp_path
 
 

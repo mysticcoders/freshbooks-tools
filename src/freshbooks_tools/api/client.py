@@ -1,15 +1,20 @@
 """FreshBooks API client with automatic token management."""
 
+import time
 from typing import Any, Optional
+from urllib.parse import urlencode
 
 import httpx
 from rich.console import Console
 
 from ..auth import ensure_valid_token, refresh_access_token
-from ..config import Config, load_account_info, save_account_info, save_tokens
+from ..config import Config, load_account_info, load_lookup_cache, save_account_info, save_lookup_cache, save_tokens
 from ..exceptions import AuthenticationError, RateLimitError, NetworkError, APIResponseError
 
 console = Console()
+
+# shortcut: one TTL for every lookup (names, rates); per-endpoint TTLs if rates change often
+LOOKUP_TTL_SECONDS = 24 * 3600
 
 
 class FreshBooksClient:
@@ -26,6 +31,7 @@ class FreshBooksClient:
         self._client: Optional[httpx.Client] = None
         self._account_id: Optional[str] = None
         self._business_id: Optional[int] = None
+        self._lookup_cache: Optional[dict] = None
 
         saved_account, saved_business = load_account_info()
         self._account_id = saved_account
@@ -88,6 +94,18 @@ class FreshBooksClient:
             self.config.tokens = tokens
             response = self._make_request("GET", url, params=params)
             return self._handle_response(response)
+
+    def get_cached(self, url: str, params: Optional[dict] = None, refresh: bool = False) -> dict[str, Any]:
+        """GET a lookup through the on-disk cache; fetched when missing, older than a day, or refresh=True."""
+        key = url + ("?" + urlencode(sorted(params.items())) if params else "")
+        if self._lookup_cache is None:
+            self._lookup_cache = load_lookup_cache()
+        entry = self._lookup_cache.get(key)
+        if refresh or entry is None or time.time() - entry["at"] > LOOKUP_TTL_SECONDS:
+            entry = {"at": time.time(), "data": self.get(url, params=params)}
+            self._lookup_cache[key] = entry
+            save_lookup_cache(self._lookup_cache)
+        return entry["data"]
 
     def post(self, url: str, data: Optional[dict] = None) -> dict[str, Any]:
         """Make authenticated POST request with automatic token refresh on 401."""
