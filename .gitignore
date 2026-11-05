@@ -37,9 +37,6 @@ ENV/
 .env.local
 .env.*.local
 
-# UV
-uv.lock
-
 # OS
 .DS_Store
 Thumbs.db
@@ -50,3 +47,7 @@ Thumbs.db
 # Application data (tokens stored locally)
 # Note: tokens are stored in ~/.config/freshbooks-tools/ or platform equivalent
 .planning/
+
+# Coverage and editor backups
+.coverage
+*~
