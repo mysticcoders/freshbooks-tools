@@ -10,7 +10,7 @@ from rich.console import Console
 from ..models import TimeEntry
 from .client import FreshBooksClient
 
-console = Console()
+console = Console(stderr=True)
 
 
 class TimeEntriesAPI:
@@ -125,8 +125,7 @@ class TimeEntriesAPI:
         if skipped > 0:
             console.print(
                 f"[yellow]Warning: Skipped {skipped} malformed time "
-                f"{'entry' if skipped == 1 else 'entries'}[/yellow]",
-                err=True
+                f"{'entry' if skipped == 1 else 'entries'}[/yellow]"
             )
 
         return entries, total

@@ -550,9 +550,7 @@ def time_export(month: str, fmt: str, output: Optional[str]):
 
 def _select_project(projects_api: ProjectsAPI, text: str):
     """Pick a project by id or name fragment; prompt when several match, exit when none do."""
-    if text.isdigit() and (by_id := projects_api.get_by_id(int(text))):
-        return by_id
-    matching_projects = projects_api.find_by_name(text)
+    matching_projects = projects_api.match_projects(text)
 
     if not matching_projects:
         all_projects = projects_api.list()
@@ -579,19 +577,11 @@ def _select_project(projects_api: ProjectsAPI, text: str):
 
 def _select_service(projects_api: ProjectsAPI, project, text: str):
     """Pick one of a project's services by id or name fragment; prompt when several match, exit when none do."""
-    def find(services):
-        if text.isdigit() and (by_id := [s for s in services if s.id == int(text)]):
-            return by_id
-        return [s for s in services if text.lower() in s.name.lower()]
-
-    services = projects_api.project_services(project.id)
-    matching_services = find(services)
-    if not matching_services and (fresh := projects_api.refresh_once(project.id)) is not None:
-        services = fresh  # not in the cache: the project may have new services
-        matching_services = find(services)
+    matching_services = projects_api.match_services(project.id, text)
 
     if not matching_services:
         console.print(f"[red]No services found matching '{text}' for project '{project.title}'[/red]")
+        services = projects_api.project_services(project.id)
         if services:
             console.print("\n[yellow]Available services for this project:[/yellow]")
             for s in services:
@@ -699,6 +689,30 @@ def time_add(hours: float, date: Optional[str], project: Optional[str],
     except Exception as e:
         console.print(f"[red]Error:[/red] {e}")
         sys.exit(1)
+
+
+@time.command("habits")
+@click.option("--days", default=90, show_default=True, help="How far back to look")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def time_habits(days: int, as_json: bool):
+    """Your projects and the services you usually log to them (most-used first)."""
+    from .mcp_server import ToolError, time_habits as habits  # shares the MCP tool's logic
+
+    try:
+        result = habits(days)
+    except ToolError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+    if as_json:
+        print(json.dumps(result, indent=2))
+        return
+    console.print(f"\n[bold]Last {days} days[/bold] (default alias: {result['default_alias'] or 'none'})\n")
+    for p in result["projects"]:
+        console.print(f"  [bold]{p['project']}[/bold] [dim](id {p['project_id']}, last {p['last_logged']})[/dim]")
+        for s in p["services"]:
+            console.print(f"    {s['hours']:>6.2f}h  {s['service'] or '(no service)'} [dim](id {s['service_id']})[/dim]")
+    if not result["projects"]:
+        console.print("  No time logged.")
 
 
 @time.command("unbilled")
@@ -1744,6 +1758,20 @@ def cache_clear():
     """Delete cached lookups; the next command refetches them."""
     clear_lookup_cache()
     console.print("Cache cleared.")
+
+
+@cli.command("mcp")
+def mcp_serve():
+    """Run as an MCP server over stdio, for Claude, Codex and other LLM clients.
+
+    \b
+    Register it once, e.g.:
+      claude mcp add freshbooks -- fb mcp
+    See docs/how-to/connect-an-llm.md for other clients.
+    """
+    from .mcp_server import run  # imported here so other commands don't load the MCP SDK
+
+    run()
 
 
 @cli.command("rates-init")
