@@ -37,6 +37,8 @@ uv tool install .
 fb auth setup .env            # copy credentials where the installed fb can find them
 ```
 
+With [just](https://just.systems/) installed, `just doctor` checks the tools above and `just install` runs both steps. Run `just` to see every recipe.
+
 To connect Claude Code:
 
 ```bash
