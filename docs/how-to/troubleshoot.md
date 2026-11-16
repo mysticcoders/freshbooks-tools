@@ -30,7 +30,7 @@ fb auth login
 
 ## "insufficient_scope" or 403 errors
 
-Your FreshBooks app or token is missing a scope. Compare your app with [Configuration › OAuth scopes](../reference/configuration.md#oauth-scopes), then log out and in again so the new token carries the scope.
+Your FreshBooks app or token is missing a scope. Compare your app with [Configuration › OAuth scopes](../reference/configuration.md#oauth-scopes), then log out and in again so the new token carries the scope. If you upgraded from v1.2, see [Upgrade from v1.2](upgrade-from-v1.2.md).
 
 ## Names show as "Project 123" or "Service 456"
 

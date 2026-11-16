@@ -58,7 +58,7 @@ Other clients, and agents without MCP, are covered in [Connect an LLM](docs/how-
 ## Documentation
 
 - **Tutorial:** [Getting started](docs/tutorials/getting-started.md)
-- **How-to:** [Log time with aliases](docs/how-to/log-time-with-aliases.md) · [Connect an LLM](docs/how-to/connect-an-llm.md) · [Use the CLI from an agent](docs/how-to/use-the-cli-from-an-agent.md) · [Answer business questions](docs/how-to/answer-business-questions.md) · [Install globally](docs/how-to/install-globally.md) · [Run reports and exports](docs/how-to/run-reports.md) · [Configure cost rates](docs/how-to/configure-cost-rates.md) · [Troubleshoot](docs/how-to/troubleshoot.md)
+- **How-to:** [Log time with aliases](docs/how-to/log-time-with-aliases.md) · [Connect an LLM](docs/how-to/connect-an-llm.md) · [Use the CLI from an agent](docs/how-to/use-the-cli-from-an-agent.md) · [Answer business questions](docs/how-to/answer-business-questions.md) · [Install globally](docs/how-to/install-globally.md) · [Run reports and exports](docs/how-to/run-reports.md) · [Configure cost rates](docs/how-to/configure-cost-rates.md) · [Troubleshoot](docs/how-to/troubleshoot.md) · [Upgrade from v1.2](docs/how-to/upgrade-from-v1.2.md)
 - **Reference:** [CLI commands](docs/reference/cli.md) · [MCP tools](docs/reference/mcp-tools.md) · [Configuration and files](docs/reference/configuration.md)
 - **Explanation:** [Authentication](docs/explanation/authentication.md) · [Roles and permissions](docs/explanation/roles-and-permissions.md) · [Lookups and caching](docs/explanation/lookups-and-caching.md) · [Rates](docs/explanation/rates.md) · [LLM integration](docs/explanation/llm-integration.md)
 
