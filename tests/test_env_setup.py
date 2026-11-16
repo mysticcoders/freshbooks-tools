@@ -13,6 +13,7 @@ from freshbooks_tools.cli import cli
 def config_dir(tmp_path, monkeypatch):
     d = tmp_path / "config"
     monkeypatch.setattr(config, "CONFIG_DIR", d)
+    monkeypatch.setattr(config, "LEGACY_CONFIG_DIR", tmp_path / "legacy-absent")
     monkeypatch.setattr(config, "ENV_FILE", d / ".env")
     monkeypatch.setattr("freshbooks_tools.cli.ENV_FILE", d / ".env")
     return d

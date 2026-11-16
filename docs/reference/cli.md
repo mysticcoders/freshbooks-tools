@@ -390,7 +390,7 @@ Usage: fb rates-init [OPTIONS]
   Generate a rates.yaml template with all team members.
 
 Options:
-  -o, --output TEXT  Output file path (default: ~/.config/freshbooks-tools/rates.yaml)
+  -o, --output TEXT  Output file path (default: rates.yaml in the config directory)
   --help             Show this message and exit.
 ```
 

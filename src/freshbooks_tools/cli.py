@@ -1820,7 +1820,7 @@ def rates_set(rate: float, project: Optional[str], teammate: Optional[str]):
 
 
 @cli.command("rates-init")
-@click.option("--output", "-o", help="Output file path (default: ~/.config/freshbooks-tools/rates.yaml)")
+@click.option("--output", "-o", help="Output file path (default: rates.yaml in the config directory)")
 def rates_init(output: Optional[str]):
     """Generate a rates.yaml template with all team members."""
     from .config import CONFIG_DIR, RATES_FILE, ensure_config_dir

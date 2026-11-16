@@ -21,6 +21,7 @@ def isolated_config_dir(tmp_path, monkeypatch):
     from freshbooks_tools import config
 
     monkeypatch.setattr(config, "CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(config, "LEGACY_CONFIG_DIR", tmp_path / "legacy-absent")
     monkeypatch.setattr(config, "TOKENS_FILE", tmp_path / "tokens.json")
     monkeypatch.setattr(config, "ENV_FILE", tmp_path / ".env")
     monkeypatch.setattr(config, "ALIASES_FILE", tmp_path / "aliases.json")
