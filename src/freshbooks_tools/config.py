@@ -3,6 +3,8 @@
 import json
 import os
 import shutil
+import stat
+import sys
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from decimal import Decimal
@@ -15,7 +17,29 @@ from dotenv import dotenv_values, find_dotenv, load_dotenv
 from platformdirs import user_config_dir
 
 APP_NAME = "freshbooks-tools"
-CONFIG_DIR = Path(user_config_dir(APP_NAME))
+
+
+def default_config_dir() -> Path:
+    """Where fb keeps its config.
+
+    FRESHBOOKS_CONFIG_DIR wins when set. On macOS and Linux it's
+    $XDG_CONFIG_HOME/freshbooks-tools, falling back to ~/.config/freshbooks-tools,
+    the convention developer CLIs follow on both. Windows uses %APPDATA%.
+    """
+    override = os.getenv("FRESHBOOKS_CONFIG_DIR")
+    if override:
+        return Path(override).expanduser()
+    if sys.platform == "win32":
+        return Path(user_config_dir(APP_NAME))
+    xdg = os.getenv("XDG_CONFIG_HOME")
+    base = Path(xdg).expanduser() if xdg else Path.home() / ".config"
+    return base / APP_NAME
+
+
+CONFIG_DIR = default_config_dir()
+LEGACY_CONFIG_DIR: Optional[Path] = (
+    Path.home() / "Library" / "Application Support" / APP_NAME if sys.platform == "darwin" else None
+)
 TOKENS_FILE = CONFIG_DIR / "tokens.json"
 TOKENS_LOCK_FILE = CONFIG_DIR / "tokens.lock"
 TOKENS_LOCK_TIMEOUT_SECONDS = 60
@@ -127,8 +151,54 @@ class Config:
 
 def ensure_config_dir() -> None:
     """Ensure the configuration directory exists with restricted permissions."""
+    migrate_legacy_config()
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     os.chmod(CONFIG_DIR, 0o700)
+
+
+def migrate_legacy_config() -> list[str]:
+    """Move files from the old macOS folder (~/Library/Application Support) into CONFIG_DIR.
+
+    Runs once in effect: a file is moved only when CONFIG_DIR doesn't already
+    have one by that name, and the old folder is removed once it's empty.
+    Files that already exist in CONFIG_DIR are left where they are. Reports
+    on stderr, since stdout carries JSON output and the MCP protocol.
+    Returns the names of the files moved.
+    """
+    legacy = LEGACY_CONFIG_DIR
+    if legacy is None or not legacy.is_dir() or legacy.resolve() == CONFIG_DIR.resolve():
+        return []
+    CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+    os.chmod(CONFIG_DIR, 0o700)
+    moved, kept = [], []
+    for entry in sorted(legacy.iterdir()):
+        if entry.name == "tokens.lock":
+            entry.unlink()
+            continue
+        target = CONFIG_DIR / entry.name
+        if target.exists():
+            kept.append(entry.name)
+            continue
+        shutil.move(str(entry), str(target))
+        if target.is_file():
+            os.chmod(target, 0o600)
+        moved.append(entry.name)
+    if not any(legacy.iterdir()):
+        legacy.rmdir()
+    if moved:
+        print(f"freshbooks-tools: moved {', '.join(moved)} from {legacy} to {CONFIG_DIR}", file=sys.stderr)
+    if kept:
+        print(
+            f"freshbooks-tools: left {', '.join(kept)} in {legacy}; {CONFIG_DIR} already has them",
+            file=sys.stderr,
+        )
+    return moved
+
+
+def _tighten_permissions(path: Path) -> None:
+    """Make a credentials file owner-only if group or others can read it."""
+    if path.stat().st_mode & (stat.S_IRWXG | stat.S_IRWXO):
+        os.chmod(path, 0o600)
 
 
 def _write_secure_json(path: Path, data: dict) -> None:
@@ -140,7 +210,9 @@ def _write_secure_json(path: Path, data: dict) -> None:
 
 def load_env_config() -> tuple[str, str, str]:
     """Load client credentials and redirect URI from .env file."""
+    migrate_legacy_config()
     if ENV_FILE.exists():
+        _tighten_permissions(ENV_FILE)
         load_dotenv(ENV_FILE)
     else:
         load_dotenv(find_dotenv(usecwd=True))  # search from the cwd, not the installed package

@@ -4,11 +4,14 @@
 
 | Platform | Location |
 |---|---|
-| macOS | `~/Library/Application Support/freshbooks-tools/` |
-| Linux | `~/.config/freshbooks-tools/` |
+| macOS, Linux | `$XDG_CONFIG_HOME/freshbooks-tools/`, or `~/.config/freshbooks-tools/` when `XDG_CONFIG_HOME` isn't set |
 | Windows | `%APPDATA%\freshbooks-tools\` |
 
-The directory is created with owner-only permissions (0700); files `fb` writes there are 0600.
+Set `FRESHBOOKS_CONFIG_DIR` to use another folder.
+
+Earlier versions used `~/Library/Application Support/freshbooks-tools/` on macOS. `fb` moves those files to the new folder the first time it runs, skipping any the new folder already has, and says what it moved.
+
+The directory is created with owner-only permissions (0700); files `fb` writes there are 0600. A `.env` that others can read is tightened to 0600 when `fb` loads it.
 
 ## Environment variables
 
