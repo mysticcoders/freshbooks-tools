@@ -14,6 +14,7 @@ import click
 from rich.console import Console
 
 from .api.client import FreshBooksClient
+from .api.bills import BillsAPI
 from .api.expenses import ExpensesAPI
 from .api.invoices import InvoicesAPI
 from .api.projects import ProjectsAPI
@@ -34,7 +35,7 @@ from .config import (
     save_aliases,
 )
 from .ui.invoice_browser import run_invoice_browser
-from .ui.tables import ARAgingTable, ClientARFormatter, ExpenseTable, ExpenseSummaryTable, InvoiceTable, RevenueSummaryTable, TimeEntryRow, TimeEntryTable
+from .ui.tables import ARAgingTable, BillTable, ClientARFormatter, ExpenseTable, ExpenseSummaryTable, InvoiceTable, RevenueSummaryTable, TimeEntryRow, TimeEntryTable
 
 console = Console()
 
@@ -1817,6 +1818,154 @@ def rates_set(rate: float, project: Optional[str], teammate: Optional[str]):
         sys.exit(1)
     console.print(f"[green]${Decimal(result['rate']):,.2f}/h[/green] for {result['applies_to']}")
     console.print(f"[dim]Saved in {result['rates_file']}[/dim]")
+
+
+@cli.group()
+def bills():
+    """Bill commands."""
+    pass
+
+
+@bills.command("list")
+@click.option("--start-date", help="Start date (YYYY-MM-DD)")
+@click.option("--end-date", help="End date (YYYY-MM-DD)")
+@click.option("--vendor", help="Filter by vendor name")
+@click.option("--status", type=click.Choice(["unpaid", "partial", "paid", "overdue", "draft"]), help="Filter by status")
+@click.option("--limit", "-l", default=100, help="Maximum number to show")
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def bills_list(start_date: Optional[str], end_date: Optional[str], vendor: Optional[str], status: Optional[str], limit: int, as_json: bool):
+    """List bills with optional filters."""
+    try:
+        config = load_config()
+
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run 'fb auth login' first.[/red]")
+            sys.exit(1)
+
+        with FreshBooksClient(config) as client:
+            bills_api = BillsAPI(client)
+
+            all_bills = bills_api.list_all(
+                date_min=start_date,
+                date_max=end_date,
+                vendor_name=vendor,
+                status=status,
+            )
+
+            all_bills = sorted(all_bills, key=lambda b: b.issue_date or "", reverse=True)[:limit]
+
+            if as_json:
+                total_amount = sum(b.amount for b in all_bills)
+                total_outstanding = sum(b.outstanding for b in all_bills)
+                output = {
+                    "bills": [
+                        {
+                            "id": bill.id,
+                            "bill_number": bill.bill_number,
+                            "vendor": bill.display_vendor,
+                            "vendor_id": bill.vendorid,
+                            "issue_date": bill.issue_date,
+                            "due_date": bill.due_date,
+                            "status": bill.display_status,
+                            "currency": bill.currency_code,
+                            "amount": float(bill.amount),
+                            "paid": float(bill.paid),
+                            "outstanding": float(bill.outstanding),
+                            "overall_description": bill.overall_description,
+                        }
+                        for bill in all_bills
+                    ],
+                    "total_amount": float(total_amount),
+                    "total_outstanding": float(total_outstanding),
+                    "count": len(all_bills),
+                }
+                print(json.dumps(output, indent=2))
+                return
+
+            if not all_bills:
+                console.print("[yellow]No bills found.[/yellow]")
+                return
+
+            title = "Bills"
+            if vendor:
+                title += f" - {vendor}"
+            if status:
+                title += f" ({status})"
+
+            bill_table = BillTable(console)
+            bill_table.print_table(all_bills, title=title)
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
+
+
+@bills.command("show")
+@click.argument("bill_id", type=int)
+@click.option("--json", "as_json", is_flag=True, help="Output as JSON")
+def bills_show(bill_id: int, as_json: bool):
+    """Show details for a specific bill."""
+    try:
+        config = load_config()
+
+        if not config.tokens:
+            console.print("[red]Not authenticated. Run 'fb auth login' first.[/red]")
+            sys.exit(1)
+
+        with FreshBooksClient(config) as client:
+            bills_api = BillsAPI(client)
+
+            bill = bills_api.get(bill_id)
+
+            if not bill:
+                if as_json:
+                    print(json.dumps({"error": f"Bill {bill_id} not found"}))
+                else:
+                    console.print(f"[red]Bill {bill_id} not found.[/red]")
+                sys.exit(1)
+
+            if as_json:
+                output = {
+                    "bill": {
+                        "id": bill.id,
+                        "bill_number": bill.bill_number,
+                        "vendor": bill.display_vendor,
+                        "vendor_id": bill.vendorid,
+                        "issue_date": bill.issue_date,
+                        "due_date": bill.due_date,
+                        "status": bill.display_status,
+                        "currency": bill.currency_code,
+                        "amount": float(bill.amount),
+                        "paid": float(bill.paid),
+                        "outstanding": float(bill.outstanding),
+                        "overall_description": bill.overall_description,
+                        "lines": [
+                            {
+                                "description": line.description,
+                                "amount": float(line.amount),
+                                "quantity": float(line.quantity),
+                                "unit_cost": float(line.unit_cost) if line.unit_cost else None,
+                                "category": line.category,
+                                "tax_name1": line.tax_name1,
+                                "tax_amount1": float(line.tax_amount1) if line.tax_amount1 else None,
+                                "tax_name2": line.tax_name2,
+                                "tax_amount2": float(line.tax_amount2) if line.tax_amount2 else None,
+                            }
+                            for line in bill.lines
+                        ],
+                        "created_at": bill.created_at,
+                        "updated_at": bill.updated_at,
+                    }
+                }
+                print(json.dumps(output, indent=2))
+                return
+
+            bill_table = BillTable(console)
+            bill_table.print_bill_detail(bill)
+
+    except Exception as e:
+        console.print(f"[red]Error:[/red] {e}")
+        sys.exit(1)
 
 
 @cli.command("rates-init")

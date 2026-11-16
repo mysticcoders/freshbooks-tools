@@ -310,6 +310,60 @@ class ProfitLossReport(BaseModel):
     download_token: Optional[str] = None
 
 
+class BillLine(BaseModel):
+    """A line item on a bill."""
+
+    id: Optional[int] = None
+    amount: Decimal = Decimal("0")
+    description: Optional[str] = None
+    quantity: Decimal = Decimal("1")
+    unit_cost: Optional[Decimal] = None
+    category: Optional[str] = None
+    list_index: Optional[int] = None
+    tax_name1: Optional[str] = None
+    tax_amount1: Optional[Decimal] = None
+    tax_name2: Optional[str] = None
+    tax_amount2: Optional[Decimal] = None
+
+
+class Bill(BaseModel):
+    """A bill record."""
+
+    id: int
+    vendorid: Optional[int] = None
+    vendor_name: Optional[str] = None
+    bill_number: Optional[str] = None
+    amount: Decimal = Decimal("0")
+    currency_code: str = "USD"
+    outstanding: Decimal = Decimal("0")
+    paid: Decimal = Decimal("0")
+    overall_category: Optional[str] = None
+    overall_description: Optional[str] = None
+    issue_date: Optional[str] = None
+    due_date: Optional[str] = None
+    status: Optional[str] = None
+    vis_state: int = 0
+    lines: list[BillLine] = []
+    created_at: Optional[str] = None
+    updated_at: Optional[str] = None
+
+    @property
+    def display_status(self) -> str:
+        """Human-readable status."""
+        if self.status:
+            return self.status.replace("_", " ").title()
+        return "Unknown"
+
+    @property
+    def display_vendor(self) -> str:
+        """Vendor display name."""
+        if self.vendor_name:
+            return self.vendor_name
+        if self.vendorid:
+            return f"Vendor {self.vendorid}"
+        return "Unknown"
+
+
 class ExpenseCategory(BaseModel):
     """An expense category record."""
 

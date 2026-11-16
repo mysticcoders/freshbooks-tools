@@ -20,6 +20,8 @@ from .schemas import (
     ProfitLossReport,
     ExpenseCategory,
     Expense,
+    Bill,
+    BillLine,
 )
 
 __all__ = [
@@ -42,4 +44,6 @@ __all__ = [
     "ProfitLossReport",
     "ExpenseCategory",
     "Expense",
+    "Bill",
+    "BillLine",
 ]

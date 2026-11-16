@@ -104,6 +104,7 @@ Enable these on your FreshBooks app. `fb auth login` requests them all.
 | `user:teams:read` | Team members |
 | `user:expenses:read` | Expenses |
 | `user:reports:read` | AR aging, revenue, profit and loss |
+| `user:bills:read` | Bills (`fb bills`) |
 
 Adding a scope to the app doesn't change an existing token: run `fb auth logout` and `fb auth login` afterwards.
 
