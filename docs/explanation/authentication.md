@@ -2,11 +2,20 @@
 
 `fb` uses the FreshBooks OAuth 2.0 authorization-code flow, with your own FreshBooks app as the OAuth client.
 
-## Why ngrok
+## The redirect relay
 
-`fb auth login` opens the FreshBooks consent page in your browser and starts a small HTTP server on `127.0.0.1:8374` to receive the redirect. FreshBooks only redirects to HTTPS URLs it has on file for the app, and a laptop has no public HTTPS address. ngrok provides one and forwards it to the local port.
+`fb auth login` opens the FreshBooks consent page in your browser and starts a small HTTP server on `127.0.0.1:8374` to receive the redirect. FreshBooks only redirects to HTTPS URLs it has on file for the app, and it rejects localhost, so it can't send the browser straight to that server.
 
-That's only needed during login. Afterwards, `fb` talks to the FreshBooks API directly.
+`https://freshbooks-tools.wecodefire.com/callback` fills the gap. It's a Cloudflare Worker that answers every request to `/callback` with a redirect to `http://127.0.0.1:8374/callback`, keeping the query string. Your browser follows it, and `fb` receives the authorization code locally.
+
+- It's the default `FRESHBOOKS_REDIRECT_URI`, so the only setup is registering it on your FreshBooks app.
+- It never sees your client secret. The authorization code passes through it in the URL, but a code is useless without the secret, expires quickly and can only be used once.
+- It stores nothing, and logging is turned off.
+- The source is in [`relay/`](../../relay/). Deploy your own copy with `cf deploy` from that directory, after changing the domain in `relay/cloudflare.config.ts`.
+
+To use your own tunnel instead, such as ngrok, set `FRESHBOOKS_REDIRECT_URI` to the tunnel URL plus `/callback` and register that on the app. Set `FRESHBOOKS_LOCAL_PORT` if the tunnel forwards to a port other than 8374.
+
+The relay is only involved during login. Afterwards, `fb` talks to the FreshBooks API directly.
 
 ## Tokens
 

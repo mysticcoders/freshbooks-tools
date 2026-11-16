@@ -2,6 +2,8 @@
 
 A CLI and MCP server for FreshBooks: log time, check receivables, invoices, unbilled time, revenue and expenses from your terminal, or by asking Claude, Codex or another LLM.
 
+Site: [freshbooks-tools.wecodefire.com](https://freshbooks-tools.wecodefire.com)
+
 ```bash
 fb time add --hours 2                 # to your default project and service
 fb time habits                        # what you usually log, and where
@@ -17,14 +19,20 @@ Or, with `fb mcp` registered in your LLM client:
 
 ## Quick start
 
-Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), and a FreshBooks app with OAuth credentials.
+Requires Python 3.11+, [uv](https://docs.astral.sh/uv/), and a FreshBooks app with OAuth credentials. Set the app's redirect URI to:
+
+```
+https://freshbooks-tools.wecodefire.com/callback
+```
+
+FreshBooks requires HTTPS and rejects localhost, so this hosted relay forwards the login to `fb` on your machine. It's the default, so you don't need ngrok or any other tunnel. It only redirects your browser: it never sees your client secret and keeps no logs. The [source](relay/) is in this repo if you'd rather host your own.
 
 ```bash
 git clone https://github.com/mysticcoders/freshbooks-tools.git
 cd freshbooks-tools
 uv sync
-cp .env.example .env          # add your FreshBooks client id, secret and redirect URI
-uv run fb auth login          # needs an HTTPS tunnel such as ngrok during login
+cp .env.example .env          # add your FreshBooks client id and secret
+uv run fb auth login          # opens your browser; approve the app
 uv run fb projects list
 ```
 

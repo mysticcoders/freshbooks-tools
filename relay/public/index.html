@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>freshbooks-tools</title>
+<meta name="description" content="A CLI and MCP server for FreshBooks. Log time, check receivables, invoices and revenue from your terminal, or by asking Claude, Codex or another LLM.">
+<meta property="og:title" content="freshbooks-tools">
+<meta property="og:description" content="FreshBooks from your terminal, or from your LLM. Open source, MIT licensed.">
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://freshbooks-tools.wecodefire.com/">
+<meta name="theme-color" content="#0f1115" media="(prefers-color-scheme: dark)">
+<meta name="theme-color" content="#fbfaf8" media="(prefers-color-scheme: light)">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/styles.css">
+<script src="/site.js" defer></script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to content</a>
+
+<header class="nav">
+  <div class="wrap nav-inner">
+    <a class="brand" href="/">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true"><rect width="32" height="32" rx="7" fill="currentColor"/><path d="M9 21.5 14.5 16 9 10.5" fill="none" class="brand-glyph" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/><path d="M17 22h6" class="brand-glyph" stroke-width="3" stroke-linecap="round"/></svg>
+      <span>freshbooks-tools</span>
+    </a>
+    <nav aria-label="Primary">
+      <ul class="nav-links">
+        <li><a href="#setup">Setup</a></li>
+        <li><a href="#callback">How the callback works</a></li>
+        <li><a href="#diy">Host your own</a></li>
+        <li><a class="nav-gh" href="https://github.com/mysticcoders/freshbooks-tools">GitHub</a></li>
+      </ul>
+    </nav>
+  </div>
+</header>
+
+<main id="main">
+
+<section class="hero">
+  <div class="wrap hero-grid">
+    <div class="hero-copy">
+      <p class="eyebrow">Open source &middot; MIT licensed</p>
+      <h1>FreshBooks from your terminal, or from your LLM.</h1>
+      <p class="lede">Log time, check receivables, invoices, unbilled time, revenue and expenses with <code>fb</code>. Or register <code>fb mcp</code> with Claude, Codex or another MCP client and just ask.</p>
+      <div class="cta">
+        <a class="btn btn-primary" href="#setup">Get started</a>
+        <a class="btn btn-ghost" href="https://github.com/mysticcoders/freshbooks-tools">View on GitHub</a>
+      </div>
+      <p class="hero-note">No tunnel needed to log in. Register one redirect URI on your FreshBooks app and you're set.</p>
+    </div>
+
+    <div class="hero-demo" aria-label="Example usage">
+      <div class="term">
+        <div class="term-bar" aria-hidden="true"><span></span><span></span><span></span><em>terminal</em></div>
+<pre class="term-body"><code><span class="c"># to your default project and service</span>
+<span class="p">$</span> fb time add --hours 2
+<span class="c"># what you usually log, and where</span>
+<span class="p">$</span> fb time habits
+<span class="p">$</span> fb invoices list --status overdue
+<span class="p">$</span> fb reports ar-aging</code></pre>
+      </div>
+      <div class="chat">
+        <div class="chat-bar" aria-hidden="true">with <code>fb mcp</code> in your LLM client</div>
+        <p class="bubble">Log two hours to acme today.</p>
+        <p class="bubble">What can we invoice this month?</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="features" aria-labelledby="features-h">
+  <div class="wrap">
+    <h2 id="features-h" class="section-h">What you can do</h2>
+    <ul class="feature-grid">
+      <li class="card">
+        <h3>Log time without the browser</h3>
+        <p><code>fb time add</code> adds to today's entry for the same project and service, or creates one. Aliases and defaults keep it to a few keystrokes.</p>
+      </li>
+      <li class="card">
+        <h3>See what's owed</h3>
+        <p>Invoices by status, AR aging, per-client receivables and unbilled time, as tables or <code>--json</code>.</p>
+      </li>
+      <li class="card">
+        <h3>Run the numbers</h3>
+        <p>Revenue, expense summaries, profit and loss, billable rates and utilization, with CSV export where it helps.</p>
+      </li>
+      <li class="card">
+        <h3>Ask an LLM</h3>
+        <p><code>fb mcp</code> is an MCP server for Claude Code, Claude Desktop, Codex and others. It can read your books and log time, and it explains its errors.</p>
+      </li>
+    </ul>
+  </div>
+</section>
+
+<section id="setup" class="setup" aria-labelledby="setup-h">
+  <div class="wrap">
+    <h2 id="setup-h" class="section-h">Set up in about fifteen minutes</h2>
+    <p class="section-sub">You'll need Python 3.11+, <a href="https://docs.astral.sh/uv/">uv</a>, and a FreshBooks account. Most of the time goes to creating the FreshBooks app.</p>
+
+    <ol class="steps">
+      <li class="step">
+        <h3>Install</h3>
+<pre class="code"><code>git clone https://github.com/mysticcoders/freshbooks-tools.git
+cd freshbooks-tools
+uv sync</code></pre>
+      </li>
+
+      <li class="step">
+        <h3>Create a FreshBooks app</h3>
+        <p>Open the <a href="https://my.freshbooks.com/#/developer">FreshBooks developer page</a> and click <strong>Create App</strong>. Any name, website and description will do. Enable the scopes listed in <a href="https://github.com/mysticcoders/freshbooks-tools/blob/main/docs/reference/configuration.md#oauth-scopes">Configuration &rsaquo; OAuth scopes</a>.</p>
+      </li>
+
+      <li class="step step-key">
+        <h3>Set the redirect URI</h3>
+        <p>Add this as the app's redirect URI. It's the default in <code>fb</code>, so there's nothing else to configure.</p>
+        <div class="copy-row">
+          <code id="redirect-uri">https://freshbooks-tools.wecodefire.com/callback</code>
+          <button class="copy" type="button" data-copy="#redirect-uri">Copy</button>
+        </div>
+        <p class="muted">FreshBooks requires HTTPS and rejects localhost. This address hands the login back to <code>fb</code> on your machine. <a href="#callback">See how</a>.</p>
+      </li>
+
+      <li class="step">
+        <h3>Add your credentials</h3>
+<pre class="code"><code>cp .env.example .env
+<span class="c"># then set these two from your FreshBooks app</span>
+FRESHBOOKS_CLIENT_ID=&lt;client id&gt;
+FRESHBOOKS_CLIENT_SECRET=&lt;client secret&gt;</code></pre>
+      </li>
+
+      <li class="step">
+        <h3>Log in</h3>
+<pre class="code"><code>uv run fb auth login
+uv run fb auth status</code></pre>
+        <p>Your browser opens. Approve the app and the terminal reports success. You only do this once; <code>fb</code> refreshes its token on its own after that.</p>
+      </li>
+
+      <li class="step">
+        <h3>Use it anywhere, and connect your LLM</h3>
+<pre class="code"><code>uv tool install .
+fb auth setup .env     <span class="c"># copies credentials where the installed fb finds them</span>
+claude mcp add --scope user freshbooks -- fb mcp</code></pre>
+        <p>Claude Desktop, Codex and agents without MCP are covered in <a href="https://github.com/mysticcoders/freshbooks-tools/blob/main/docs/how-to/connect-an-llm.md">Connect an LLM</a>.</p>
+      </li>
+    </ol>
+  </div>
+</section>
+
+<section id="callback" class="callback" aria-labelledby="callback-h">
+  <div class="wrap">
+    <h2 id="callback-h" class="section-h">How the callback works</h2>
+    <p class="section-sub">When you log in, <code>fb</code> listens on <code>127.0.0.1:8374</code> for FreshBooks to send back an authorization code. FreshBooks will only redirect to an HTTPS address, and it rejects localhost, so it can't reach that listener directly. This site's <code>/callback</code> sits in between.</p>
+
+    <figure class="flow">
+      <svg viewBox="0 0 880 340" role="img" aria-labelledby="flow-title flow-desc">
+        <title id="flow-title">OAuth login through the callback relay</title>
+        <desc id="flow-desc">fb opens FreshBooks in your browser. After you approve, FreshBooks redirects the browser to freshbooks-tools.wecodefire.com/callback, which redirects it to fb on 127.0.0.1:8374. fb then exchanges the code with FreshBooks using your client secret, which never leaves your machine.</desc>
+        <defs>
+          <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0 10 5 0 10z" class="f-arrowhead"/></marker>
+        </defs>
+
+        <path d="M115 80 C 115 34, 765 34, 765 76" class="f-line f-dashed" marker-end="url(#arrow)"/>
+        <rect x="250" y="8" width="380" height="28" rx="14" class="f-pill"/>
+        <text x="440" y="27" class="f-step">5 fb sends code + client secret, gets tokens</text>
+
+        <rect x="20" y="80" width="190" height="84" rx="12" class="f-box f-local"/>
+        <text x="115" y="116" class="f-label">fb on your machine</text>
+        <text x="115" y="140" class="f-sub">127.0.0.1:8374</text>
+
+        <rect x="345" y="80" width="190" height="84" rx="12" class="f-box"/>
+        <text x="440" y="116" class="f-label">Your browser</text>
+        <text x="440" y="140" class="f-sub">consent page</text>
+
+        <rect x="670" y="80" width="190" height="84" rx="12" class="f-box"/>
+        <text x="765" y="116" class="f-label">FreshBooks</text>
+        <text x="765" y="140" class="f-sub">auth.freshbooks.com</text>
+
+        <rect x="345" y="240" width="190" height="84" rx="12" class="f-box f-relay"/>
+        <text x="440" y="276" class="f-label">This relay</text>
+        <text x="440" y="300" class="f-sub">/callback &#8594; 302</text>
+
+        <path d="M210 122 H343" class="f-line" marker-end="url(#arrow)"/>
+        <text x="277" y="112" class="f-step">1 opens</text>
+
+        <path d="M535 122 H668" class="f-line" marker-end="url(#arrow)"/>
+        <text x="602" y="112" class="f-step">2 you approve</text>
+
+        <path d="M765 164 V282 H537" class="f-line" marker-end="url(#arrow)"/>
+        <text x="755" y="214" class="f-step f-end">3 redirect</text>
+        <text x="755" y="232" class="f-step f-end">with code</text>
+
+        <path d="M345 282 H115 V166" class="f-line" marker-end="url(#arrow)"/>
+        <text x="125" y="214" class="f-step f-left">4 redirect to</text>
+        <text x="125" y="232" class="f-step f-left">127.0.0.1:8374</text>
+      </svg>
+      <ol class="flow-steps">
+        <li><code>fb</code> opens the FreshBooks consent page in your browser.</li>
+        <li>You approve the app.</li>
+        <li>FreshBooks redirects your browser to this relay's <code>/callback</code> with a code.</li>
+        <li>The relay redirects your browser to <code>fb</code> on <code>127.0.0.1:8374</code>.</li>
+        <li><code>fb</code> sends the code and your client secret straight to FreshBooks and gets tokens.</li>
+      </ol>
+    </figure>
+
+    <ul class="trust">
+      <li>
+        <h3>It never sees your secret</h3>
+        <p>Your client secret stays in your <code>.env</code>. Only <code>fb</code> uses it, talking straight to FreshBooks.</p>
+      </li>
+      <li>
+        <h3>A code alone is useless</h3>
+        <p>The authorization code passes through in the URL, but it can't be exchanged without your secret, expires quickly and works once.</p>
+      </li>
+      <li>
+        <h3>Nothing is kept</h3>
+        <p>The relay is a single redirect. It stores nothing, logging is off, and responses are <code>no-store</code> and <code>no-referrer</code>.</p>
+      </li>
+      <li>
+        <h3>Forged callbacks are refused</h3>
+        <p>Each login sends a random <code>state</code> value, and <code>fb</code> rejects any callback that doesn't return it.</p>
+      </li>
+    </ul>
+    <p class="muted center">It's a few dozen lines: <a href="https://github.com/mysticcoders/freshbooks-tools/tree/main/relay">read the source</a>.</p>
+  </div>
+</section>
+
+<section id="diy" class="diy" aria-labelledby="diy-h">
+  <div class="wrap">
+    <h2 id="diy-h" class="section-h">Prefer to do it yourself?</h2>
+    <p class="section-sub">The hosted callback is a convenience, not a requirement. Point <code>FRESHBOOKS_REDIRECT_URI</code> anywhere you control.</p>
+
+    <div class="diy-grid">
+      <article class="card diy-card">
+        <h3>Host your own relay</h3>
+        <p>Deploy the same Worker to a hostname on your Cloudflare account. Needs Node.js 22.18+ and the <a href="https://developers.cloudflare.com/cf/">cf CLI</a>.</p>
+<pre class="code"><code>cd relay
+<span class="c"># set domains in cloudflare.config.ts to your host</span>
+npm install
+cf deploy</code></pre>
+        <p>Then in <code>.env</code>, and as the app's redirect URI:</p>
+<pre class="code"><code>FRESHBOOKS_REDIRECT_URI=https://&lt;your-host&gt;/callback</code></pre>
+      </article>
+
+      <article class="card diy-card">
+        <h3>Use ngrok or another tunnel</h3>
+        <p>Run a tunnel to the login listener while you log in, and stop it afterwards.</p>
+<pre class="code"><code>ngrok http 8374</code></pre>
+        <p>Then in <code>.env</code>, and as the app's redirect URI:</p>
+<pre class="code"><code>FRESHBOOKS_REDIRECT_URI=https://&lt;ngrok-host&gt;/callback
+<span class="c"># only if the tunnel forwards somewhere other than 8374</span>
+FRESHBOOKS_LOCAL_PORT=&lt;port&gt;</code></pre>
+        <p class="muted">Free ngrok URLs change on every restart, so you'll update both each time you log in.</p>
+      </article>
+    </div>
+  </div>
+</section>
+
+<section class="docs" aria-labelledby="docs-h">
+  <div class="wrap">
+    <h2 id="docs-h" class="section-h">Documentation</h2>
+    <div class="docs-grid">
+      <div>
+        <h3>Start here</h3>
+        <ul>
+          <li><a href="https://github.com/mysticcoders/freshbooks-tools/blob/main/docs/tutorials/getting-started.md">Getting started</a></li>
+          <li><a href="https://github.com/mysticcoders/freshbooks-tools/blob/main/docs/how-to/install-globally.md">Install globally</a></li>
+          <li><a href="https://github.com/mysticcoders/freshbooks-tools/blob/main/docs/how-to/troubleshoot.md">Troubleshoot</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>How-to</h3>
+        <ul>
+          <li><a href="https://github.com/mysticcoders/freshbooks-tools/blob/main/docs/how-to/log-time-with-aliases.md">Log time with aliases</a></li>
+          <li><a href="https://github.com/mysticcoders/freshbooks-tools/blob/main/docs/how-to/connect-an-llm.md">Connect an LLM</a></li>
+          <li><a href="https://github.com/mysticcoders/freshbooks-tools/blob/main/docs/how-to/answer-business-questions.md">Answer business questions</a></li>
+          <li><a href="https://github.com/mysticcoders/freshbooks-tools/blob/main/docs/how-to/run-reports.md">Run reports and exports</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Reference</h3>
+        <ul>
+          <li><a href="https://github.com/mysticcoders/freshbooks-tools/blob/main/docs/reference/cli.md">CLI commands</a></li>
+          <li><a href="https://github.com/mysticcoders/freshbooks-tools/blob/main/docs/reference/mcp-tools.md">MCP tools</a></li>
+          <li><a href="https://github.com/mysticcoders/freshbooks-tools/blob/main/docs/reference/configuration.md">Configuration and files</a></li>
+        </ul>
+      </div>
+      <div>
+        <h3>Explanation</h3>
+        <ul>
+          <li><a href="https://github.com/mysticcoders/freshbooks-tools/blob/main/docs/explanation/authentication.md">Authentication</a></li>
+          <li><a href="https://github.com/mysticcoders/freshbooks-tools/blob/main/docs/explanation/roles-and-permissions.md">Roles and permissions</a></li>
+          <li><a href="https://github.com/mysticcoders/freshbooks-tools/blob/main/docs/explanation/llm-integration.md">LLM integration</a></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</section>
+
+</main>
+
+<footer class="footer">
+  <div class="wrap footer-inner">
+    <p>freshbooks-tools is open source under the MIT License. <a href="https://github.com/mysticcoders/freshbooks-tools">Source on GitHub</a>.</p>
+    <p class="muted">An independent project, not affiliated with or endorsed by FreshBooks. FreshBooks is a trademark of its owner.</p>
+  </div>
+</footer>
+</body>
+</html>

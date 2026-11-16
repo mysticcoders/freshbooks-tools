@@ -1,6 +1,6 @@
 # Setup and development tasks for freshbooks-tools. Run `just` to list them.
 
-ngrok_doc := "docs/tutorials/getting-started.md (section 3, Open an HTTPS tunnel)"
+redirect_doc := "docs/tutorials/getting-started.md (section 3, Set the redirect URI)"
 
 # List the recipes.
 default:
@@ -23,13 +23,6 @@ doctor:
     else
         echo "FAIL  Python 3.11+ is missing. Install it: uv python install 3.11"
         fail=1
-    fi
-    if command -v ngrok >/dev/null; then
-        echo "ok    ngrok: $(ngrok version)"
-    else
-        echo "WARN  ngrok is missing. It is needed only for 'fb auth login'."
-        echo "      Install it: https://ngrok.com/download"
-        echo "      Set it up: {{ngrok_doc}}"
     fi
     if [[ ! -f .env ]]; then
         echo "WARN  .env is missing. Copy .env.example to .env and add your FreshBooks app credentials."
@@ -55,10 +48,9 @@ install: doctor
 test *args:
     uv run pytest {{args}}
 
-# Log in to FreshBooks. Start ngrok first; this recipe does not start it.
+# Log in to FreshBooks through the hosted redirect relay.
 login:
-    @echo "fb auth login needs an HTTPS tunnel to port 8374:"
-    @echo "  1. In another terminal, run: ngrok http 8374"
-    @echo "  2. Set FRESHBOOKS_REDIRECT_URI in .env to the ngrok URL plus /callback."
-    @echo "  Details: {{ngrok_doc}}"
+    @echo "Your FreshBooks app's redirect URI must be https://freshbooks-tools.wecodefire.com/callback"
+    @echo "  (or match FRESHBOOKS_REDIRECT_URI if you run your own tunnel)."
+    @echo "  Details: {{redirect_doc}}"
     uv run fb auth login

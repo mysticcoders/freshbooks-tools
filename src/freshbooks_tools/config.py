@@ -21,6 +21,8 @@ TOKENS_LOCK_FILE = CONFIG_DIR / "tokens.lock"
 TOKENS_LOCK_TIMEOUT_SECONDS = 60
 RATES_FILE = CONFIG_DIR / "rates.yaml"
 ENV_FILE = CONFIG_DIR / ".env"
+DEFAULT_REDIRECT_URI = "https://freshbooks-tools.wecodefire.com/callback"
+RELAY_LOCAL_PORT = 8374
 
 
 @dataclass
@@ -116,7 +118,7 @@ class Config:
 
     client_id: str
     client_secret: str
-    redirect_uri: str = "http://localhost:8374/callback"
+    redirect_uri: str = DEFAULT_REDIRECT_URI
     tokens: Optional[Tokens] = None
     rates: RatesConfig = field(default_factory=RatesConfig)
     account_id: Optional[str] = None
@@ -145,7 +147,7 @@ def load_env_config() -> tuple[str, str, str]:
 
     client_id = os.getenv("FRESHBOOKS_CLIENT_ID")
     client_secret = os.getenv("FRESHBOOKS_CLIENT_SECRET")
-    redirect_uri = os.getenv("FRESHBOOKS_REDIRECT_URI", "http://localhost:8374/callback")
+    redirect_uri = os.getenv("FRESHBOOKS_REDIRECT_URI") or DEFAULT_REDIRECT_URI
 
     if not client_id or not client_secret:
         raise ValueError(

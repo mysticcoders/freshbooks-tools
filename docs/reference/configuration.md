@@ -18,8 +18,8 @@ Read from `.env` in the config directory if it exists, otherwise from `.env` in 
 |---|---|---|---|
 | `FRESHBOOKS_CLIENT_ID` | yes | | OAuth app client id |
 | `FRESHBOOKS_CLIENT_SECRET` | yes | | OAuth app client secret |
-| `FRESHBOOKS_REDIRECT_URI` | for login | `http://localhost:8374/callback` | Must be HTTPS and registered in the app |
-| `FRESHBOOKS_LOCAL_PORT` | no | `8374` | Port the login callback listens on |
+| `FRESHBOOKS_REDIRECT_URI` | no | `https://freshbooks-tools.wecodefire.com/callback` | Must be HTTPS, not localhost, and registered in the app. The default is the [hosted relay](../explanation/authentication.md#the-redirect-relay) |
+| `FRESHBOOKS_LOCAL_PORT` | no | `8374` | Port the login callback listens on. The hosted relay only forwards to 8374 |
 
 ## Files
 
