@@ -1,6 +1,8 @@
 """OAuth authentication for FreshBooks API."""
 
+import html
 import http.server
+import secrets
 import socketserver
 import threading
 import webbrowser
@@ -11,7 +13,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 import httpx
 from rich.console import Console
 
-from .config import Config, Tokens, save_tokens
+from .config import Config, Tokens, load_tokens, save_tokens, tokens_lock
 from .exceptions import AuthenticationError, NetworkError
 
 console = Console()
@@ -39,13 +41,24 @@ class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
 
     authorization_code: Optional[str] = None
     error: Optional[str] = None
+    expected_state: Optional[str] = None
 
     def do_GET(self) -> None:
-        """Handle the OAuth callback GET request."""
+        """Handle the OAuth callback GET request, rejecting a missing or mismatched state."""
         parsed = urlparse(self.path)
         params = parse_qs(parsed.query)
 
-        if "code" in params:
+        state = params.get("state", [None])[0]
+        state_ok = (
+            OAuthCallbackHandler.expected_state is not None
+            and state is not None
+            and secrets.compare_digest(state, OAuthCallbackHandler.expected_state)
+        )
+
+        if ("code" in params or "error" in params) and not state_ok:
+            OAuthCallbackHandler.error = "State mismatch: this callback didn't come from the login fb started"
+            self._send_failure()
+        elif "code" in params:
             OAuthCallbackHandler.authorization_code = params["code"][0]
             self.send_response(200)
             self.send_header("Content-type", "text/html")
@@ -62,35 +75,40 @@ class OAuthCallbackHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(response)
         elif "error" in params:
             OAuthCallbackHandler.error = params.get("error_description", params["error"])[0]
-            self.send_response(400)
-            self.send_header("Content-type", "text/html")
+            self._send_failure()
+        else:
+            self.send_response(404)
             self.end_headers()
-            response = f"""
+
+    def _send_failure(self) -> None:
+        """Send the failure page, escaping the error text taken from the query string."""
+        self.send_response(400)
+        self.send_header("Content-type", "text/html")
+        self.end_headers()
+        response = f"""
             <html>
             <head><title>FreshBooks CLI - Authorization Failed</title></head>
             <body style="font-family: system-ui; text-align: center; padding: 50px;">
                 <h1 style="color: #e74c3c;">Authorization Failed</h1>
-                <p>{OAuthCallbackHandler.error}</p>
+                <p>{html.escape(OAuthCallbackHandler.error or "")}</p>
             </body>
             </html>
             """.encode()
-            self.wfile.write(response)
-        else:
-            self.send_response(404)
-            self.end_headers()
+        self.wfile.write(response)
 
     def log_message(self, format: str, *args) -> None:
         """Suppress server logging."""
         pass
 
 
-def get_authorization_url(config: Config) -> str:
-    """Generate the OAuth authorization URL."""
+def get_authorization_url(config: Config, state: str) -> str:
+    """Generate the OAuth authorization URL carrying the per-login state value."""
     params = {
         "client_id": config.client_id,
         "response_type": "code",
         "redirect_uri": config.redirect_uri,
         "scope": " ".join(SCOPES),
+        "state": state,
     }
     return f"{AUTH_URL}?{urlencode(params)}"
 
@@ -181,6 +199,8 @@ def start_oauth_flow(config: Config, local_port: int = 8374) -> Tokens:
 
     OAuthCallbackHandler.authorization_code = None
     OAuthCallbackHandler.error = None
+    state = secrets.token_urlsafe(32)
+    OAuthCallbackHandler.expected_state = state
 
     port = int(os.getenv("FRESHBOOKS_LOCAL_PORT", str(local_port)))
 
@@ -202,7 +222,7 @@ def start_oauth_flow(config: Config, local_port: int = 8374) -> Tokens:
     server_thread = threading.Thread(target=server.handle_request)
     server_thread.start()
 
-    auth_url = get_authorization_url(config)
+    auth_url = get_authorization_url(config, state)
     console.print(f"\n[bold]Opening browser for authorization...[/bold]")
     console.print(f"If the browser doesn't open, visit:\n[link={auth_url}]{auth_url}[/link]\n")
     webbrowser.open(auth_url)
@@ -233,9 +253,29 @@ def ensure_valid_token(config: Config) -> Tokens:
 
     if config.tokens.is_expired:
         console.print("[dim]Access token expired, refreshing...[/dim]")
+        return refresh_tokens_locked(config)
+
+    return config.tokens
+
+
+def refresh_tokens_locked(config: Config) -> Tokens:
+    """Refresh tokens under the inter-process lock, and save them.
+
+    Inside the lock, re-reads tokens.json first. If another process has
+    already replaced the access token this process holds, and the new one is
+    still valid, uses it instead of refreshing again. Otherwise refreshes with
+    the newest refresh token on disk, since FreshBooks invalidates a refresh
+    token once it has been used.
+    """
+    stale_access_token = config.tokens.access_token if config.tokens else None
+    with tokens_lock():
+        current = load_tokens()
+        if current and current.access_token != stale_access_token and not current.is_expired:
+            config.tokens = current
+            return current
+        if current:
+            config.tokens = current
         tokens = refresh_access_token(config)
         save_tokens(tokens)
         config.tokens = tokens
         return tokens
-
-    return config.tokens

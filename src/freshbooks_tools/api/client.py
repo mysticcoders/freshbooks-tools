@@ -7,8 +7,8 @@ from urllib.parse import urlencode
 import httpx
 from rich.console import Console
 
-from ..auth import ensure_valid_token, refresh_access_token
-from ..config import Config, load_account_info, load_lookup_cache, save_account_info, save_lookup_cache, save_tokens
+from ..auth import ensure_valid_token, refresh_tokens_locked
+from ..config import Config, load_account_info, load_lookup_cache, save_account_info, save_lookup_cache
 from ..exceptions import AuthenticationError, RateLimitError, NetworkError, APIResponseError
 
 console = Console(stderr=True)  # stdout carries data (JSON output, MCP protocol)
@@ -86,9 +86,7 @@ class FreshBooksClient:
             return self._handle_response(response)
         except AuthenticationError:
             console.print("[dim]Token expired, refreshing...[/dim]")
-            tokens = refresh_access_token(self.config)
-            save_tokens(tokens)
-            self.config.tokens = tokens
+            refresh_tokens_locked(self.config)
             response = self._make_request("GET", url, params=params)
             return self._handle_response(response)
 
@@ -122,9 +120,7 @@ class FreshBooksClient:
             return self._handle_response(response)
         except AuthenticationError:
             console.print("[dim]Token expired, refreshing...[/dim]")
-            tokens = refresh_access_token(self.config)
-            save_tokens(tokens)
-            self.config.tokens = tokens
+            refresh_tokens_locked(self.config)
             response = self._make_request(method, url, json=data)
             return self._handle_response(response)
 

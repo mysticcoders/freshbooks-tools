@@ -12,6 +12,10 @@ That's only needed during login. Afterwards, `fb` talks to the FreshBooks API di
 
 Login returns an access token and a refresh token, saved in `tokens.json` in the config directory. Before each request `fb` checks the access token's expiry, with a five-minute margin, and refreshes it if needed. If a request still gets a 401, `fb` refreshes once and retries. You only log in again if the refresh token itself stops working.
 
+FreshBooks issues a new refresh token on every refresh and invalidates the old one. So that `fb mcp` and a CLI command running at the same time don't both spend the same refresh token, `fb` refreshes while holding a lock on `tokens.lock`, and first re-reads `tokens.json` in case another process already refreshed.
+
+Each login also sends a random `state` value, and the callback is rejected unless FreshBooks returns the same value, so a forged callback can't log `fb` in to someone else's account.
+
 ## Account and business ids
 
 The API addresses most data by account id (accounting) or business id (time tracking and projects). `fb` reads both from your profile on the first call and saves them in `account.json`. It uses your first business membership.
