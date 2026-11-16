@@ -10,12 +10,12 @@ A token keeps the scopes it was issued with. After a scope is added to the app o
 
 ## Your FreshBooks role: what you may see
 
-FreshBooks then applies your role in the business. Owners and admins see the business's invoices, payments, reports, expenses and everyone's time. Team members and contractors typically see less, often their own time and the projects they're on. When FreshBooks refuses something, the CLI prints the error and the MCP tools return it to the LLM, so you see the reason rather than an empty result.
+FreshBooks then applies your role in the business. Owners and admins see the business's invoices, payments, reports, expenses, bills and everyone's time. Team members and contractors typically see less, often their own time and the projects they're on. When FreshBooks refuses something, the CLI prints the error and the MCP tools return it to the LLM, so you see the reason rather than an empty result.
 
 So the same `fb` setup serves both:
 
 - **Someone logging their own time** uses `fb time add`, `fb time habits`, aliases, and the time tools over MCP.
-- **An owner or admin** also uses the invoice, receivables, unbilled-time, revenue and expense commands. See [Answer business questions](../how-to/answer-business-questions.md).
+- **An owner or admin** also uses the invoice, receivables, unbilled-time, revenue, expense and bill commands. See [Answer business questions](../how-to/answer-business-questions.md).
 
 Each person logs in as themselves; `fb` never shares tokens between people.
 

@@ -1,6 +1,6 @@
 # Answer business questions
 
-For business owners and admins: receivables, invoices, unbilled time, revenue and expenses, from the command line or by asking an LLM. What you can see depends on your FreshBooks role; see [Roles and permissions](../explanation/roles-and-permissions.md).
+For business owners and admins: receivables, invoices, bills, unbilled time, revenue and expenses, from the command line or by asking an LLM. What you can see depends on your FreshBooks role; see [Roles and permissions](../explanation/roles-and-permissions.md).
 
 ## Set up
 
@@ -9,7 +9,7 @@ Each person uses their own FreshBooks login, so each person sets up `fb` themsel
 1. Follow [Getting started](../tutorials/getting-started.md) through step 5 (log in). Creating your own FreshBooks app is simplest. To share one app instead, its owner shares the client id and secret privately and registers your redirect URI on the app.
 2. Optionally [install `fb` globally](install-globally.md) and [connect your LLM](connect-an-llm.md).
 
-If you logged in before `user:reports:read` was added, log in again so your token carries it:
+If you logged in before `user:reports:read` or `user:bills:read` was added, log in again so your token carries them:
 
 ```bash
 fb auth logout && fb auth login
@@ -24,6 +24,15 @@ fb auth logout && fb auth login
 | "Show Acme's invoices" | `fb invoices list --client Acme` |
 | "What's overdue?" | `fb invoices list --status overdue` |
 | "Show invoice 0000072" | `fb invoices show 0000072` |
+
+## What do we owe?
+
+| Ask the LLM | Or run |
+|---|---|
+| "What bills are due?" | `fb bills list --status unpaid` |
+| "Which vendor bills are overdue?" | `fb bills list --status overdue` |
+| "Bills from AWS" | `fb bills list --vendor AWS` |
+| "Show bill 123" | `fb bills show 123` |
 
 ## What can we invoice?
 

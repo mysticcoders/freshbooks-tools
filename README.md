@@ -1,6 +1,6 @@
 # FreshBooks Tools
 
-A CLI and MCP server for FreshBooks: log time, check receivables, invoices, unbilled time, revenue and expenses from your terminal, or by asking Claude, Codex or another LLM.
+A CLI and MCP server for FreshBooks: log time, check receivables, invoices, bills, unbilled time, revenue and expenses from your terminal, or by asking Claude, Codex or another LLM.
 
 Site: [freshbooks-tools.wecodefire.com](https://freshbooks-tools.wecodefire.com)
 

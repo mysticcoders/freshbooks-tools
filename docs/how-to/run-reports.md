@@ -11,13 +11,14 @@ fb reports client-ar --client-name "Acme" # what one client owes
 fb reports client-ar --client-id 12345 --detail
 ```
 
-## Revenue and expenses
+## Revenue, expenses and bills
 
 ```bash
 fb reports revenue --start-date 2026-01-01 --end-date 2026-03-31
 fb reports revenue --resolution quarterly --start-date 2026-01-01 --end-date 2026-12-31
 fb reports expense-summary --start-date 2026-01-01 --end-date 2026-03-31 --export csv
 fb expenses list --start-date 2026-10-01
+fb bills list --start-date 2026-10-01
 ```
 
 ## Time

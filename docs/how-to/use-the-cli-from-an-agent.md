@@ -83,6 +83,7 @@ This only affects `fb`'s reports, not FreshBooks.
 | What a client owes | `fb reports client-ar --client-name Acme --json` |
 | Revenue | `fb reports revenue --start-date 2026-01-01 --end-date 2026-03-31 --json` |
 | Expenses | `fb expenses list --start-date 2026-10-01 --json` |
+| Unpaid bills | `fb bills list --status unpaid --json` |
 | Team members | `fb team --json` |
 | Which billable rate applies | `fb rates show --json` (add `-p <project>`) |
 
