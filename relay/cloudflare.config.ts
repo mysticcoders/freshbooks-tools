@@ -7,6 +7,7 @@ export default defineConfig({
 		compatibilityDate: "2026-10-23",
 		entrypoint,
 		domains: ["freshbooks-tools.wecodefire.com"],
+		assets: { runWorkerFirst: ["/callback"], htmlHandling: "auto-trailing-slash", notFoundHandling: "none" },
 		workersDev: false,
 		previewUrls: false,
 		observability: { enabled: false },

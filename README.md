@@ -2,6 +2,8 @@
 
 A CLI and MCP server for FreshBooks: log time, check receivables, invoices, unbilled time, revenue and expenses from your terminal, or by asking Claude, Codex or another LLM.
 
+Site: [freshbooks-tools.wecodefire.com](https://freshbooks-tools.wecodefire.com)
+
 ```bash
 fb time add --hours 2                 # to your default project and service
 fb time habits                        # what you usually log, and where
