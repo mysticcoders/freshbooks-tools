@@ -10,12 +10,15 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
+from filelock import FileLock
 from dotenv import dotenv_values, find_dotenv, load_dotenv
 from platformdirs import user_config_dir
 
 APP_NAME = "freshbooks-tools"
 CONFIG_DIR = Path(user_config_dir(APP_NAME))
 TOKENS_FILE = CONFIG_DIR / "tokens.json"
+TOKENS_LOCK_FILE = CONFIG_DIR / "tokens.lock"
+TOKENS_LOCK_TIMEOUT_SECONDS = 60
 RATES_FILE = CONFIG_DIR / "rates.yaml"
 ENV_FILE = CONFIG_DIR / ".env"
 
@@ -179,9 +182,25 @@ def load_tokens() -> Optional[Tokens]:
 
 
 def save_tokens(tokens: Tokens) -> None:
-    """Save tokens to config directory."""
+    """Save tokens to config directory.
+
+    Writes to a temporary file and renames it into place, so a process
+    reading tokens.json never sees a half-written file.
+    """
     ensure_config_dir()
-    _write_secure_json(TOKENS_FILE, tokens.to_dict())
+    tmp = TOKENS_FILE.with_name(TOKENS_FILE.name + ".tmp")
+    _write_secure_json(tmp, tokens.to_dict())
+    os.replace(tmp, TOKENS_FILE)
+
+
+def tokens_lock() -> FileLock:
+    """Inter-process lock held while refreshing and saving tokens.
+
+    FreshBooks rotates refresh tokens on every refresh, so two processes
+    (for example fb mcp and a CLI command) must not refresh at once.
+    """
+    ensure_config_dir()
+    return FileLock(str(TOKENS_LOCK_FILE), timeout=TOKENS_LOCK_TIMEOUT_SECONDS)
 
 
 def delete_tokens() -> None:

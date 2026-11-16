@@ -27,6 +27,7 @@ Read from `.env` in the config directory if it exists, otherwise from `.env` in 
 |---|---|---|
 | `.env` | `fb auth setup` | Credentials (above) |
 | `tokens.json` | `fb auth login`, token refresh | OAuth access and refresh tokens |
+| `tokens.lock` | token refresh | Lock that stops two processes refreshing at once |
 | `account.json` | first API call | Account id and business id |
 | `aliases.json` | `fb alias`, MCP `set_alias` | Aliases and the default alias |
 | `lookup_cache.json` | most commands | Cached names, team, clients, services and rates |
