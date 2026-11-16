@@ -42,7 +42,7 @@ def test_custom_redirect_overrides_relay(isolated_env, monkeypatch):
 
 
 def test_authorization_url_uses_relay():
-    url = auth.get_authorization_url(Config(client_id="cid", client_secret="csec"))
+    url = auth.get_authorization_url(Config(client_id="cid", client_secret="csec"), "state")
 
     assert "redirect_uri=https%3A%2F%2Ffreshbooks-tools.wecodefire.com%2Fcallback" in url
 
