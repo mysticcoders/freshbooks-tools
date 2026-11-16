@@ -13,7 +13,7 @@ from urllib.parse import parse_qs, urlencode, urlparse
 import httpx
 from rich.console import Console
 
-from .config import Config, Tokens, load_tokens, save_tokens, tokens_lock
+from .config import DEFAULT_REDIRECT_URI, RELAY_LOCAL_PORT, Config, Tokens, load_tokens, save_tokens, tokens_lock
 from .exceptions import AuthenticationError, NetworkError
 
 console = Console()
@@ -187,13 +187,14 @@ def refresh_access_token(config: Config) -> Tokens:
     )
 
 
-def start_oauth_flow(config: Config, local_port: int = 8374) -> Tokens:
+def start_oauth_flow(config: Config, local_port: int = RELAY_LOCAL_PORT) -> Tokens:
     """Start the OAuth flow with a local callback server.
 
     Args:
         config: Application configuration
         local_port: Local port to listen on (default 8374).
-                   When using ngrok, this should match the port ngrok forwards to.
+                   The hosted relay always forwards to 8374; with ngrok or
+                   another tunnel, this must match the port it forwards to.
     """
     import os
 
@@ -203,6 +204,13 @@ def start_oauth_flow(config: Config, local_port: int = 8374) -> Tokens:
     OAuthCallbackHandler.expected_state = state
 
     port = int(os.getenv("FRESHBOOKS_LOCAL_PORT", str(local_port)))
+
+    if config.redirect_uri == DEFAULT_REDIRECT_URI and port != RELAY_LOCAL_PORT:
+        raise ValueError(
+            f"The hosted relay ({DEFAULT_REDIRECT_URI}) only forwards to port {RELAY_LOCAL_PORT}, "
+            f"but FRESHBOOKS_LOCAL_PORT is {port}. Unset FRESHBOOKS_LOCAL_PORT, or set "
+            "FRESHBOOKS_REDIRECT_URI to a tunnel that forwards to that port."
+        )
 
     parsed = urlparse(config.redirect_uri)
     is_ngrok = "ngrok" in parsed.netloc

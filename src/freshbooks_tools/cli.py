@@ -91,25 +91,14 @@ def auth_setup(env_file: Path):
 def auth_login():
     """Start OAuth login flow.
 
-    Requires FRESHBOOKS_REDIRECT_URI in .env for ngrok setup.
+    Uses the hosted relay at https://freshbooks-tools.wecodefire.com/callback
+    unless FRESHBOOKS_REDIRECT_URI is set. Register the same URI on your
+    FreshBooks app.
     """
     try:
         config = load_config()
         console.print("[bold]Starting FreshBooks OAuth login...[/bold]")
         console.print()
-
-        is_default_uri = config.redirect_uri == "http://localhost:8374/callback"
-        if is_default_uri:
-            console.print("[yellow]Note: FreshBooks requires HTTPS for redirect URIs.[/yellow]")
-            console.print()
-            console.print("To authenticate, you need to use ngrok:")
-            console.print("  1. Run: [cyan]ngrok http 8374[/cyan]")
-            console.print("  2. Copy the https URL (e.g., https://abc123.ngrok.io)")
-            console.print("  3. Add to .env: [cyan]FRESHBOOKS_REDIRECT_URI=https://abc123.ngrok.io/callback[/cyan]")
-            console.print("  4. Add the same URL to your FreshBooks app in Developer Portal")
-            console.print("  5. Re-run: [cyan]fb auth login[/cyan]")
-            console.print()
-            sys.exit(1)
 
         console.print("[dim]Redirect URI configured:[/dim]")
         console.print(f"[cyan]{config.redirect_uri}[/cyan]")

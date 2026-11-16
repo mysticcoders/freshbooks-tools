@@ -4,7 +4,7 @@
 
 ```bash
 fb auth status
-fb auth login        # needs ngrok running; see Getting started
+fb auth login
 ```
 
 ## "Missing FRESHBOOKS_CLIENT_ID or FRESHBOOKS_CLIENT_SECRET"
@@ -17,10 +17,9 @@ fb auth setup path/to/.env
 
 ## OAuth callback fails
 
-1. Make sure ngrok is running: `ngrok http 8374`.
-2. `FRESHBOOKS_REDIRECT_URI` in `.env` must be the current ngrok URL plus `/callback`. Free ngrok URLs change on every restart.
-3. The same URL must be registered in your FreshBooks app.
-4. Port 8374 must be free. To use another, set `FRESHBOOKS_LOCAL_PORT` and run `ngrok http <port>`.
+1. Your FreshBooks app's redirect URI must be exactly `https://freshbooks-tools.wecodefire.com/callback`, or match `FRESHBOOKS_REDIRECT_URI` if you set it.
+2. Leave `fb auth login` running until the browser comes back. If the browser shows "connection refused" on `127.0.0.1:8374`, `fb` had stopped listening (it waits two minutes); run it again.
+3. Port 8374 must be free. The hosted relay only forwards to 8374. To use another port, run your own tunnel (for example `ngrok http <port>`), set `FRESHBOOKS_LOCAL_PORT`, and set `FRESHBOOKS_REDIRECT_URI` to the tunnel URL plus `/callback`.
 
 ## Token refresh keeps failing
 

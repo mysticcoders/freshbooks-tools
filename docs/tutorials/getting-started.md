@@ -2,7 +2,7 @@
 
 In this tutorial you'll connect `fb` to your FreshBooks account, look at your projects, and log your first time entry. It takes about fifteen minutes, most of it in the FreshBooks developer portal.
 
-You'll need Python 3.11+, [uv](https://docs.astral.sh/uv/), [ngrok](https://ngrok.com/download), and a FreshBooks account.
+You'll need Python 3.11+, [uv](https://docs.astral.sh/uv/), and a FreshBooks account.
 
 ## 1. Install
 
@@ -24,15 +24,15 @@ You should see the list of command groups: `auth`, `time`, `projects`, `alias`, 
 3. Enable the scopes listed in [Configuration › OAuth scopes](../reference/configuration.md#oauth-scopes).
 4. Keep the page open: you'll need the **Client ID**, the **Client Secret**, and the redirect URI field.
 
-## 3. Open an HTTPS tunnel
+## 3. Set the redirect URI
 
-FreshBooks only redirects to HTTPS URLs, and the login flow listens on your machine. ngrok bridges the two. In a separate terminal:
+FreshBooks only redirects to HTTPS URLs and rejects localhost, but the login flow listens on your machine. A hosted relay bridges the two. Add this as the redirect URI in your FreshBooks app:
 
-```bash
-ngrok http 8374
+```
+https://freshbooks-tools.wecodefire.com/callback
 ```
 
-Copy the `https://…ngrok-free.app` URL it prints. Add `<that URL>/callback` as the redirect URI in your FreshBooks app.
+That's the address `fb` uses by default. The relay sends your browser on to `fb` at `127.0.0.1:8374`; it never sees your client secret and keeps no logs. [Authentication](../explanation/authentication.md) explains how it works and how to use your own tunnel instead.
 
 ## 4. Add your credentials
 
@@ -45,7 +45,7 @@ Edit `.env`:
 ```env
 FRESHBOOKS_CLIENT_ID=<client id>
 FRESHBOOKS_CLIENT_SECRET=<client secret>
-FRESHBOOKS_REDIRECT_URI=https://abc123.ngrok-free.app/callback
+FRESHBOOKS_REDIRECT_URI=https://freshbooks-tools.wecodefire.com/callback
 ```
 
 ## 5. Log in
@@ -60,7 +60,7 @@ A browser window opens. Approve the app, and the terminal reports success. Check
 uv run fb auth status
 ```
 
-You can stop ngrok now. It's only needed to log in; after that `fb` refreshes its token on its own.
+You only log in once; after that `fb` refreshes its token on its own.
 
 ## 6. Look at your projects
 

@@ -125,7 +125,8 @@ Usage: fb auth login [OPTIONS]
 
   Start OAuth login flow.
 
-  Requires FRESHBOOKS_REDIRECT_URI in .env for ngrok setup.
+  Uses the hosted relay at https://freshbooks-tools.wecodefire.com/callback unless
+  FRESHBOOKS_REDIRECT_URI is set. Register the same URI on your FreshBooks app.
 
 Options:
   --help  Show this message and exit.
