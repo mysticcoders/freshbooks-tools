@@ -1,0 +1,10 @@
+{"response": {"result": {"bills": [
+  {"id": 1, "bill_number": "B-1", "amount": {"amount": "150.00", "code": "USD"},
+   "outstanding": {"amount": "50.00", "code": "USD"}, "paid": {"amount": "100.00", "code": "USD"},
+   "issue_date": "2026-10-01", "due_date": "2026-10-31", "status": "partial",
+   "vendor": {"vendorid": 7, "vendor_name": "Acme Supplies"}, "lines": []},
+  {"id": 2, "bill_number": "B-2", "amount": {"amount": "80.00", "code": "USD"},
+   "outstanding": {"amount": "80.00", "code": "USD"}, "paid": {"amount": "0.00", "code": "USD"},
+   "issue_date": "2026-10-05", "due_date": "2026-11-04", "status": "unpaid",
+   "vendor": {"vendorid": 8, "vendor_name": "Beta Hosting"}, "lines": []}
+], "total": 2, "pages": 1}}}
