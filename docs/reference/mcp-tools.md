@@ -9,7 +9,7 @@ Tools served by `fb mcp`. Write tools change FreshBooks or local config; MCP cli
 Sent to the client when it connects:
 
 ```text
-FreshBooks for the logged-in user: time tracking, projects, invoices, expenses and reports.
+FreshBooks for the logged-in user: time tracking, projects, invoices, bills, expenses and reports.
 
 Logging time (e.g. "log 2 hours to acme today"):
 1. Call time_habits. It returns today's date, the user's aliases and default alias, and each
@@ -27,8 +27,8 @@ If the user says they always log a project the same way, offer set_alias so next
 `add_time_entry` can take just the alias, or no project at all if it is the default.
 Business questions (owners and admins): list_invoices (pass client for "what does X owe"),
 unbilled_time ("what can we invoice?"), accounts_receivable_aging, profit_and_loss, list_expenses,
-list_time_entries with everyone=true. If a tool reports insufficient_scope or 403, explain that
-the user's FreshBooks role or login may not allow it; they may need `fb auth logout` then `fb auth login`.
+list_bills ("what bills are due?"), list_time_entries with everyone=true.
+If a tool reports insufficient_scope or 403, explain that the user's FreshBooks role or login may not allow it; they may need `fb auth logout` then `fb auth login`.
 
 Rates: if amounts come back as zero or hours_without_rate is non-zero, FreshBooks is probably hiding
 the rate (it does for project members). Ask the user their rate and offer set_billable_rate.
@@ -67,6 +67,14 @@ date: YYYY-MM-DD; omit for today.
 | `billable` | boolean | `true` |
 | `new_entry` | boolean | `false` |
 
+## `get_bill` (read)
+
+One bill with its lines.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `bill_id` | integer | required |
+
 ## `get_billable_rate` (read)
 
 The billable rate that applies to time logged by the user (or a teammate), and where it comes from.
@@ -93,6 +101,18 @@ One invoice with its lines and payments.
 Saved aliases (name -> project and service) and the default alias.
 
 No parameters.
+
+## `list_bills` (read)
+
+Bills from vendors, optionally filtered by issue date range (YYYY-MM-DD), vendor and status.
+
+| Parameter | Type | Default |
+|---|---|---|
+| `date_min` | string/null | `null` |
+| `date_max` | string/null | `null` |
+| `vendor` | string/null | `null` |
+| `status` | string/null | `null` |
+| `limit` | integer | `50` |
 
 ## `list_expenses` (read)
 
