@@ -18,6 +18,7 @@ Options:
 Commands:
   alias       Name a project + service so 'fb time add' can use it.
   auth        Authentication commands.
+  bills       Bill commands.
   cache       Cached lookups (projects, services, team, clients, rates); refreshed...
   expenses    Expense commands.
   invoices    Invoice commands.
@@ -163,6 +164,51 @@ Usage: fb auth status [OPTIONS]
   Show current authentication status.
 
 Options:
+  --help  Show this message and exit.
+```
+
+## `fb bills`
+
+```text
+Usage: fb bills [OPTIONS] COMMAND [ARGS]...
+
+  Bill commands.
+
+Options:
+  --help  Show this message and exit.
+
+Commands:
+  list  List bills with optional filters.
+  show  Show details for a specific bill.
+```
+
+## `fb bills list`
+
+```text
+Usage: fb bills list [OPTIONS]
+
+  List bills with optional filters.
+
+Options:
+  --start-date TEXT               Start date (YYYY-MM-DD)
+  --end-date TEXT                 End date (YYYY-MM-DD)
+  --vendor TEXT                   Filter by vendor name
+  --status [unpaid|partial|paid|overdue|draft]
+                                  Filter by status
+  -l, --limit INTEGER             Maximum number to show
+  --json                          Output as JSON
+  --help                          Show this message and exit.
+```
+
+## `fb bills show`
+
+```text
+Usage: fb bills show [OPTIONS] BILL_ID
+
+  Show details for a specific bill.
+
+Options:
+  --json  Output as JSON
   --help  Show this message and exit.
 ```
 

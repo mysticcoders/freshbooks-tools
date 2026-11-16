@@ -11,7 +11,7 @@ from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 
-from ..models import AccountAgingReport, Expense, Invoice, TimeEntry
+from ..models import AccountAgingReport, Bill, Expense, Invoice, TimeEntry
 
 if TYPE_CHECKING:
     from ..models import ProfitLossReport
@@ -408,6 +408,115 @@ class ExpenseTable:
         if expense.invoiceid:
             self.console.print()
             self.console.print(f"  [bold]Attached to Invoice:[/bold] {expense.invoiceid}")
+
+
+class BillTable:
+    """Rich table formatter for bills."""
+
+    STATUS_COLORS = {
+        "unpaid": "red",
+        "partial": "yellow",
+        "paid": "green",
+        "overdue": "red bold",
+        "draft": "dim",
+    }
+
+    def __init__(self, console: Optional[Console] = None):
+        self.console = console or Console()
+
+    def get_status_style(self, status: str) -> str:
+        """Get Rich style for bill status."""
+        return self.STATUS_COLORS.get(status.lower(), "white")
+
+    def create_table(
+        self,
+        bills: list[Bill],
+        title: Optional[str] = None,
+    ) -> Table:
+        """Create a Rich table from bills."""
+        table = Table(title=title, show_footer=True)
+
+        table.add_column("Issue Date", style="cyan", no_wrap=True)
+        table.add_column("Due Date", style="cyan", no_wrap=True)
+        table.add_column("Bill #", style="white")
+        table.add_column("Vendor", style="yellow")
+        table.add_column("Amount", justify="right", style="green")
+        table.add_column("Outstanding", justify="right", style="red")
+        table.add_column("Status", justify="center")
+
+        total_amount = Decimal("0")
+        total_outstanding = Decimal("0")
+
+        for bill in bills:
+            status_style = self.get_status_style(bill.display_status)
+            status_text = Text(bill.display_status, style=status_style)
+
+            total_amount += bill.amount
+            total_outstanding += bill.outstanding
+
+            table.add_row(
+                bill.issue_date or "-",
+                bill.due_date or "-",
+                bill.bill_number or "-",
+                bill.display_vendor,
+                f"${bill.amount:.2f}",
+                f"${bill.outstanding:.2f}",
+                status_text,
+            )
+
+        table.columns[0].footer = ""
+        table.columns[1].footer = ""
+        table.columns[2].footer = ""
+        table.columns[3].footer = ""
+        table.columns[4].footer = Text(f"${total_amount:.2f}", style="bold green")
+        table.columns[5].footer = Text(f"${total_outstanding:.2f}", style="bold red")
+        table.columns[6].footer = Text("TOTAL", style="bold")
+
+        return table
+
+    def print_table(
+        self,
+        bills: list[Bill],
+        title: Optional[str] = None,
+    ) -> None:
+        """Print the bills table."""
+        table = self.create_table(bills, title)
+        self.console.print(table)
+
+    def print_bill_detail(self, bill: Bill) -> None:
+        """Print detailed bill information."""
+        status_style = self.get_status_style(bill.display_status)
+
+        self.console.print()
+        self.console.print(f"[bold]Bill {bill.id}[/bold]")
+        if bill.bill_number:
+            self.console.print(f"  Bill #: [white]{bill.bill_number}[/white]")
+        self.console.print(f"  Vendor: [yellow]{bill.display_vendor}[/yellow]")
+        self.console.print(f"  Status: [{status_style}]{bill.display_status}[/{status_style}]")
+        self.console.print(f"  Currency: {bill.currency_code}")
+        if bill.issue_date:
+            self.console.print(f"  Issue Date: [cyan]{bill.issue_date}[/cyan]")
+        if bill.due_date:
+            self.console.print(f"  Due Date: [cyan]{bill.due_date}[/cyan]")
+        self.console.print()
+
+        self.console.print(f"  [bold]Amount:[/bold] ${bill.amount:.2f}")
+        self.console.print(f"  [bold]Paid:[/bold] ${bill.paid:.2f}")
+        self.console.print(f"  [bold red]Outstanding:[/bold red] ${bill.outstanding:.2f}")
+
+        if bill.lines:
+            self.console.print()
+            self.console.print(f"  [bold]Line Items:[/bold]")
+            for i, line in enumerate(bill.lines, 1):
+                desc = line.description or "No description"
+                self.console.print(f"    {i}. {desc} — ${line.amount:.2f}")
+                if line.category:
+                    self.console.print(f"       Category: {line.category}")
+
+        if bill.overall_description:
+            self.console.print()
+            self.console.print(f"  [bold]Description:[/bold]")
+            self.console.print(f"    {bill.overall_description}")
 
 
 class ARAgingTable:

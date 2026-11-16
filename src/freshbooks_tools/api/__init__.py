@@ -8,6 +8,7 @@ from .rates import RatesAPI
 from .projects import ProjectsAPI
 from .reports import ReportsAPI
 from .expenses import ExpensesAPI
+from .bills import BillsAPI
 
 __all__ = [
     "FreshBooksClient",
@@ -18,4 +19,5 @@ __all__ = [
     "ProjectsAPI",
     "ReportsAPI",
     "ExpensesAPI",
+    "BillsAPI",
 ]

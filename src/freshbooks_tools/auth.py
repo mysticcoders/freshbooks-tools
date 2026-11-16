@@ -33,6 +33,7 @@ SCOPES = [
     "user:teams:read",
     "user:expenses:read",
     "user:reports:read",
+    "user:bills:read",
 ]
 
 
