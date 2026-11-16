@@ -6,7 +6,7 @@ Time entries and invoices refer to people, clients, projects and services by id.
 
 Lookup responses: projects, each project's services, team members, staff, project members, clients, the business service list, team member rates and service rates. They're saved in `lookup_cache.json` in the config directory, keyed by request URL.
 
-Time entries, invoices, expenses and reports are not cached. They're the data you're asking about, so they're always fetched fresh.
+Time entries, invoices, bills, expenses and reports are not cached. They're the data you're asking about, so they're always fetched fresh.
 
 ## When the cache is refreshed
 

@@ -1,0 +1,7 @@
+[
+  {"id": "vendor", "args": {"vendor": "Acme"}, "params": {"search[vendor_name]": "Acme"}},
+  {"id": "status", "args": {"status": "overdue"}, "params": {"search[status]": "overdue"}},
+  {"id": "dates", "args": {"date_min": "2026-10-01", "date_max": "2026-10-31"},
+   "params": {"search[date_min]": "2026-10-01", "search[date_max]": "2026-10-31"}},
+  {"id": "page size capped", "args": {"limit": 500}, "params": {"per_page": "100"}}
+]

@@ -10,6 +10,8 @@ from mcp.server.mcpserver.exceptions import ToolError
 from freshbooks_tools import mcp_server
 from freshbooks_tools.config import Config, RatesConfig, save_aliases
 
+from .conftest import load_fixture
+
 ME = re.compile(r".*/auth/api/v1/users/me$")
 ENTRIES = re.compile(r".*/timetracking/business/42/time_entries\?.*")
 PROJECTS = re.compile(r".*/timetracking/business/42/projects\?.*")
@@ -342,3 +344,47 @@ def test_list_time_entries_includes_amounts(httpx_mock, monkeypatch):
 
     assert result["entries"][0]["billable_rate"] == "125" and result["entries"][0]["amount"] == "250.00"
     assert result["total_amount"] == "250.00"
+
+
+BILLS = re.compile(r".*/accounting/account/ACCT/bills/bills(\?.*)?$")
+BILL_1 = re.compile(r".*/accounting/account/ACCT/bills/bills/1(\?.*)?$")
+BILL_FILTERS = load_fixture("mcp_bill_filters.json")
+
+
+@pytest.mark.parametrize("name", ["list_bills", "get_bill"])
+def test_bill_tools_read_only(name):
+    tools = {t.name: t for t in asyncio.run(mcp_server.server.list_tools())}
+    assert tools[name].annotations.read_only_hint is True
+
+
+@pytest.mark.parametrize("case", BILL_FILTERS, ids=[c["id"] for c in BILL_FILTERS])
+def test_list_bills_filters(httpx_mock, case):
+    httpx_mock.add_response(url=BILLS, json=load_fixture("bills_response.json"))
+
+    mcp_server.list_bills(**case["args"])
+
+    params = httpx_mock.get_requests()[-1].url.params
+    assert {k: params[k] for k in case["params"]} == case["params"]
+
+
+def test_list_bills_limit(httpx_mock):
+    httpx_mock.add_response(url=BILLS, json=load_fixture("bills_response.json"))
+
+    result = mcp_server.list_bills(limit=1)
+
+    assert result["total"] == 2
+    assert [b["bill_number"] for b in result["bills"]] == ["B-1"]
+
+
+def test_get_bill(httpx_mock):
+    bill = load_fixture("bills_response.json")["response"]["result"]["bills"][0]
+    httpx_mock.add_response(url=BILL_1, json={"response": {"result": {"bill": bill}}})
+
+    assert mcp_server.get_bill(1)["bill_number"] == "B-1"
+
+
+def test_get_bill_unknown(httpx_mock):
+    httpx_mock.add_response(url=BILL_1, json={"response": {"result": {}}})
+
+    with pytest.raises(ToolError, match="No bill with id 1"):
+        mcp_server.get_bill(1)

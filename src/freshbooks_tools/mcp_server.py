@@ -12,6 +12,7 @@ from mcp.server.mcpserver import MCPServer
 from mcp.server.mcpserver.exceptions import ToolError
 from mcp.types import ToolAnnotations
 
+from .api.bills import BillsAPI
 from .api.client import FreshBooksClient
 from .api.expenses import ExpensesAPI
 from .api.invoices import InvoicesAPI
@@ -24,7 +25,7 @@ from .config import RATES_FILE, load_aliases, load_config, save_aliases, set_bil
 from .exceptions import FreshBooksError
 
 INSTRUCTIONS = """\
-FreshBooks for the logged-in user: time tracking, projects, invoices, expenses and reports.
+FreshBooks for the logged-in user: time tracking, projects, invoices, bills, expenses and reports.
 
 Logging time (e.g. "log 2 hours to acme today"):
 1. Call time_habits. It returns today's date, the user's aliases and default alias, and each
@@ -42,8 +43,8 @@ If the user says they always log a project the same way, offer set_alias so next
 `add_time_entry` can take just the alias, or no project at all if it is the default.
 Business questions (owners and admins): list_invoices (pass client for "what does X owe"),
 unbilled_time ("what can we invoice?"), accounts_receivable_aging, profit_and_loss, list_expenses,
-list_time_entries with everyone=true. If a tool reports insufficient_scope or 403, explain that
-the user's FreshBooks role or login may not allow it; they may need `fb auth logout` then `fb auth login`.
+list_bills ("what bills are due?"), list_time_entries with everyone=true.
+If a tool reports insufficient_scope or 403, explain that the user's FreshBooks role or login may not allow it; they may need `fb auth logout` then `fb auth login`.
 
 Rates: if amounts come back as zero or hours_without_rate is non-zero, FreshBooks is probably hiding
 the rate (it does for project members). Ask the user their rate and offer set_billable_rate.
@@ -458,6 +459,32 @@ def list_expenses(date_min: Optional[str] = None, date_max: Optional[str] = None
     with _client() as client:
         expenses, total = ExpensesAPI(client).list(date_min=date_min, date_max=date_max, vendor=vendor, per_page=min(limit, 100))
         return {"total": total, "expenses": [e.model_dump(mode="json") for e in expenses[:limit]]}
+
+
+@server.tool(annotations=READ)
+def list_bills(
+    date_min: Optional[str] = None,
+    date_max: Optional[str] = None,
+    vendor: Optional[str] = None,
+    status: Optional[str] = None,
+    limit: int = 50,
+) -> dict:
+    """Bills from vendors, optionally filtered by issue date range (YYYY-MM-DD), vendor and status."""
+    with _client() as client:
+        bills, total = BillsAPI(client).list(
+            date_min=date_min, date_max=date_max, vendor_name=vendor, status=status, per_page=min(limit, 100)
+        )
+        return {"total": total, "bills": [b.model_dump(mode="json") for b in bills[:limit]]}
+
+
+@server.tool(annotations=READ)
+def get_bill(bill_id: int) -> dict:
+    """One bill with its lines."""
+    with _client() as client:
+        bill = BillsAPI(client).get(bill_id)
+        if not bill:
+            raise ToolError(f"No bill with id {bill_id}.")
+        return bill.model_dump(mode="json")
 
 
 @server.tool(annotations=READ)

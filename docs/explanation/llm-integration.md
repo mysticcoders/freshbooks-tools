@@ -28,7 +28,7 @@ Tool errors carry the reason: "No project matches 'foo'. Call list_projects…",
 
 ## Beyond time
 
-Owners and admins get read-only tools for invoices (filterable by client), unbilled time with amounts, receivables aging, profit and loss, expenses, and the team, so "what does Acme owe?" or "what can we invoice?" works the same way. What each person sees depends on their FreshBooks role; see [Roles and permissions](roles-and-permissions.md).
+Owners and admins get read-only tools for invoices (filterable by client), unbilled time with amounts, receivables aging, profit and loss, expenses, bills, and the team, so "what does Acme owe?", "what can we invoice?" or "what bills are due?" works the same way. What each person sees depends on their FreshBooks role; see [Roles and permissions](roles-and-permissions.md).
 
 ## Without MCP
 
