@@ -388,3 +388,21 @@ def test_get_bill_unknown(httpx_mock):
 
     with pytest.raises(ToolError, match="No bill with id 1"):
         mcp_server.get_bill(1)
+
+
+INVOICE_1 = re.compile(r".*/accounting/account/ACCT/invoices/invoices/1(\?.*)?$")
+MCP_FAILURES = [
+    ("get_bill", BILL_1, 403, {"error": "insufficient_scope"}, "insufficient_scope"),
+    ("get_bill", BILL_1, 404, {"response": {"errors": [{"message": "Not found"}]}}, "404"),
+    ("get_invoice", INVOICE_1, 403, {"error": "insufficient_scope"}, "insufficient_scope"),
+    ("get_invoice", INVOICE_1, 404, {"response": {"errors": [{"message": "Not found"}]}}, "404"),
+]
+
+
+@pytest.mark.parametrize("tool,url,status,body,match", MCP_FAILURES, ids=[f"{c[0]}-{c[2]}" for c in MCP_FAILURES])
+def test_detail_tool_failure_reaches_llm(httpx_mock, tool, url, status, body, match):
+    httpx_mock.add_response(url=url, status_code=status, json=body)
+
+    with pytest.raises(ToolError, match=match) as raised:
+        getattr(mcp_server, tool)(1)
+    assert "No bill with id" not in str(raised.value) and "No invoice with id" not in str(raised.value)
