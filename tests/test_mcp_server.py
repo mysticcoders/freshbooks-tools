@@ -393,9 +393,9 @@ def test_get_bill_unknown(httpx_mock):
 INVOICE_1 = re.compile(r".*/accounting/account/ACCT/invoices/invoices/1(\?.*)?$")
 MCP_FAILURES = [
     ("get_bill", BILL_1, 403, {"error": "insufficient_scope"}, "insufficient_scope"),
-    ("get_bill", BILL_1, 404, {"response": {"errors": [{"message": "Not found"}]}}, "404"),
+    ("get_bill", BILL_1, 404, {"response": {"errors": [{"errno": 1012, "field": "id", "message": "Bill not found.", "object": "bill", "value": "1"}]}}, "Bill not found\\.$"),
     ("get_invoice", INVOICE_1, 403, {"error": "insufficient_scope"}, "insufficient_scope"),
-    ("get_invoice", INVOICE_1, 404, {"response": {"errors": [{"message": "Not found"}]}}, "404"),
+    ("get_invoice", INVOICE_1, 404, {"response": {"errors": [{"errno": 1012, "field": "invoiceid", "message": "Invoice not found.", "object": "invoice", "value": "1"}]}}, "Invoice not found\\.$"),
 ]
 
 
