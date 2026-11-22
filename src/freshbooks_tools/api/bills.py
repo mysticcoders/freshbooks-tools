@@ -188,15 +188,20 @@ class BillsAPI:
         return all_bills
 
     def get(self, bill_id: int) -> Optional[Bill]:
-        """Get a single bill by ID."""
+        """Get a single bill by ID.
+
+        Returns None when FreshBooks answers with an empty result.
+
+        Raises:
+            NotFoundError: FreshBooks answered 404.
+            FreshBooksError: any other API or network failure, unchanged, so
+                a missing scope or a timeout never reads as "not found".
+        """
         url = self.client.accounting_url(f"bills/bills/{bill_id}")
-        try:
-            response = self.client.get(url, params={"include[]": "vendor"})
-            bill_data = response.get("response", {}).get("result", {}).get("bill", {})
+        response = self.client.get(url, params={"include[]": "vendor"})
+        bill_data = response.get("response", {}).get("result", {}).get("bill", {})
 
-            if not bill_data:
-                return None
-
-            return self._parse_bill(bill_data)
-        except Exception:
+        if not bill_data:
             return None
+
+        return self._parse_bill(bill_data)

@@ -9,7 +9,7 @@ from rich.console import Console
 
 from ..auth import ensure_valid_token, refresh_tokens_locked
 from ..config import Config, load_account_info, load_lookup_cache, save_account_info, save_lookup_cache
-from ..exceptions import AuthenticationError, RateLimitError, NetworkError, APIResponseError
+from ..exceptions import AuthenticationError, RateLimitError, NetworkError, APIResponseError, NotFoundError
 
 console = Console(stderr=True)  # stdout carries data (JSON output, MCP protocol)
 
@@ -65,6 +65,11 @@ class FreshBooksClient:
             elif e.response.status_code == 429:
                 retry_after = e.response.headers.get("Retry-After")
                 raise RateLimitError(retry_after=retry_after) from e
+            elif e.response.status_code == 404:
+                raise NotFoundError(
+                    "Not found (404): it does not exist, or this login cannot see it. "
+                    f"FreshBooks said: {e.response.text[:1000]}"
+                ) from e
             else:
                 raise APIResponseError(f"API error {e.response.status_code}: {e.response.text[:1000]}") from e
 

@@ -56,3 +56,13 @@ class APIResponseError(FreshBooksError):
     """API returned unexpected response format."""
 
     pass
+
+
+class NotFoundError(APIResponseError):
+    """FreshBooks answered 404: the record does not exist, or this login cannot see it.
+
+    A detail lookup that gets an empty result returns None instead. Keeping
+    the two apart tells the user whether FreshBooks refused the address or
+    simply had nothing there. It subclasses APIResponseError so that code
+    which already catches API errors keeps catching it.
+    """

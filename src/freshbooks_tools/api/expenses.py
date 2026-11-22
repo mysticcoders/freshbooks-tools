@@ -156,18 +156,23 @@ class ExpensesAPI:
         return all_expenses
 
     def get(self, expense_id: int) -> Optional[Expense]:
-        """Get a single expense by ID."""
+        """Get a single expense by ID.
+
+        Returns None when FreshBooks answers with an empty result.
+
+        Raises:
+            NotFoundError: FreshBooks answered 404.
+            FreshBooksError: any other API or network failure, unchanged, so
+                a missing scope or a timeout never reads as "not found".
+        """
         url = self.client.accounting_url(f"expenses/expenses/{expense_id}")
-        try:
-            response = self.client.get(url)
-            exp_data = response.get("response", {}).get("result", {}).get("expense", {})
+        response = self.client.get(url)
+        exp_data = response.get("response", {}).get("result", {}).get("expense", {})
 
-            if not exp_data:
-                return None
-
-            return self._parse_expense(exp_data)
-        except Exception:
+        if not exp_data:
             return None
+
+        return self._parse_expense(exp_data)
 
     def list_categories(self) -> list[ExpenseCategory]:
         """List all expense categories (cached)."""
