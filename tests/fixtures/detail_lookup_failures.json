@@ -1,0 +1,87 @@
+{
+  "lookups": [
+    {
+      "id": "bill",
+      "module": "freshbooks_tools.api.bills",
+      "cls": "BillsAPI",
+      "method": "get",
+      "path": "bills/bills"
+    },
+    {
+      "id": "expense",
+      "module": "freshbooks_tools.api.expenses",
+      "cls": "ExpensesAPI",
+      "method": "get",
+      "path": "expenses/expenses"
+    },
+    {
+      "id": "invoice",
+      "module": "freshbooks_tools.api.invoices",
+      "cls": "InvoicesAPI",
+      "method": "get_invoice",
+      "path": "invoices/invoices"
+    }
+  ],
+  "outcomes": [
+    {
+      "id": "empty result",
+      "status": 200,
+      "body": {
+        "response": {
+          "result": {}
+        }
+      },
+      "returns": null
+    },
+    {
+      "id": "404",
+      "status": 404,
+      "body": {
+        "response": {
+          "errors": [
+            {
+              "errno": 1012,
+              "field": "id",
+              "message": "Bill not found.",
+              "object": "bill",
+              "value": "7"
+            }
+          ]
+        }
+      },
+      "raises": "NotFoundError",
+      "match": "Bill not found\\.",
+      "note": "Recorded from the live API for a missing bill; expenses and invoices answer the same way."
+    },
+    {
+      "id": "403 scope",
+      "status": 403,
+      "body": {
+        "error": "insufficient_scope"
+      },
+      "raises": "APIResponseError",
+      "match": "insufficient_scope"
+    },
+    {
+      "id": "429",
+      "status": 429,
+      "body": {},
+      "raises": "RateLimitError"
+    },
+    {
+      "id": "500",
+      "status": 500,
+      "body": {
+        "error": "boom"
+      },
+      "raises": "APIResponseError",
+      "match": "500"
+    },
+    {
+      "id": "timeout",
+      "exception": "ReadTimeout",
+      "raises": "NetworkError",
+      "match": "timed out"
+    }
+  ]
+}

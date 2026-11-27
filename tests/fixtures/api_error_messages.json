@@ -1,0 +1,66 @@
+[
+  {
+    "id": "404 real",
+    "status": 404,
+    "body": {
+      "response": {
+        "errors": [
+          {
+            "errno": 1012,
+            "field": "id",
+            "message": "Bill not found.",
+            "object": "bill",
+            "value": "7"
+          }
+        ]
+      }
+    },
+    "message": "Not found (404): it does not exist, or this login cannot see it. FreshBooks said: Bill not found."
+  },
+  {
+    "id": "two errors",
+    "status": 422,
+    "body": {
+      "response": {
+        "errors": [
+          {
+            "message": "Amount is required."
+          },
+          {
+            "message": "Vendor is required."
+          }
+        ]
+      }
+    },
+    "message": "API error 422: Amount is required.; Vendor is required."
+  },
+  {
+    "id": "oauth error",
+    "status": 403,
+    "body": {
+      "error": "insufficient_scope"
+    },
+    "message": "API error 403: insufficient_scope"
+  },
+  {
+    "id": "oauth description",
+    "status": 403,
+    "body": {
+      "error": "insufficient_scope",
+      "error_description": "The request requires higher privileges."
+    },
+    "message": "API error 403: The request requires higher privileges."
+  },
+  {
+    "id": "not json",
+    "status": 502,
+    "text": "Bad Gateway",
+    "message": "API error 502: Bad Gateway"
+  },
+  {
+    "id": "json without messages",
+    "status": 500,
+    "message": "API error 500: {\"response\": {\"result\": {}}}",
+    "text": "{\"response\": {\"result\": {}}}"
+  }
+]

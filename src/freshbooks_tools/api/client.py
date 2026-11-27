@@ -9,9 +9,38 @@ from rich.console import Console
 
 from ..auth import ensure_valid_token, refresh_tokens_locked
 from ..config import Config, load_account_info, load_lookup_cache, save_account_info, save_lookup_cache
-from ..exceptions import AuthenticationError, RateLimitError, NetworkError, APIResponseError
+from ..exceptions import AuthenticationError, RateLimitError, NetworkError, APIResponseError, NotFoundError
 
 console = Console(stderr=True)  # stdout carries data (JSON output, MCP protocol)
+
+
+def _error_text(response: httpx.Response) -> str:
+    """Return FreshBooks' own error message for a failed response.
+
+    The accounting API puts messages in ``response.errors[].message``; the
+    OAuth layer uses ``error_description`` or ``error``. Several messages are
+    joined with "; ". A body with none of these (HTML from a proxy, an
+    unexpected shape) comes back raw, cut to 1000 characters, so no detail is
+    lost when FreshBooks changes its format.
+
+    Args:
+        response: The failed HTTP response. Its body may be empty or not JSON.
+
+    Returns:
+        The message text. Never None; an empty string for an empty body.
+    """
+    try:
+        data = response.json()
+    except ValueError:
+        data = None
+    if isinstance(data, dict):
+        errors = (data.get("response") or {}).get("errors") or data.get("errors") or []
+        messages = [e["message"] for e in errors if isinstance(e, dict) and isinstance(e.get("message"), str)]
+        if not messages:
+            messages = [data[k] for k in ("error_description", "error", "message") if isinstance(data.get(k), str)][:1]
+        if messages:
+            return "; ".join(messages)
+    return response.text[:1000]
 
 # shortcut: one TTL for every lookup (names, rates); per-endpoint TTLs if rates change often
 LOOKUP_TTL_SECONDS = 24 * 3600
@@ -65,8 +94,13 @@ class FreshBooksClient:
             elif e.response.status_code == 429:
                 retry_after = e.response.headers.get("Retry-After")
                 raise RateLimitError(retry_after=retry_after) from e
+            elif e.response.status_code == 404:
+                raise NotFoundError(
+                    "Not found (404): it does not exist, or this login cannot see it. "
+                    f"FreshBooks said: {_error_text(e.response)}"
+                ) from e
             else:
-                raise APIResponseError(f"API error {e.response.status_code}: {e.response.text[:1000]}") from e
+                raise APIResponseError(f"API error {e.response.status_code}: {_error_text(e.response)}") from e
 
     def _make_request(self, method: str, url: str, **kwargs) -> httpx.Response:
         """Make HTTP request with network error handling."""

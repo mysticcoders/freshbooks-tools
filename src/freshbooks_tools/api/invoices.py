@@ -184,7 +184,15 @@ class InvoicesAPI:
         return all_invoices
 
     def get_invoice(self, invoice_id: int, include_lines: bool = True, include_payments: bool = True) -> Optional[Invoice]:
-        """Get a single invoice by ID."""
+        """Get a single invoice by ID.
+
+        Returns None when FreshBooks answers with an empty result.
+
+        Raises:
+            NotFoundError: FreshBooks answered 404.
+            FreshBooksError: any other API or network failure, unchanged, so
+                a missing scope or a timeout never reads as "not found".
+        """
         params = {}
         includes = []
         if include_lines:
@@ -195,78 +203,75 @@ class InvoicesAPI:
             params["include"] = ",".join(includes)
 
         url = self.client.accounting_url(f"invoices/invoices/{invoice_id}")
-        try:
-            response = self.client.get(url, params=params)
-            inv_data = response.get("response", {}).get("result", {}).get("invoice", {})
+        response = self.client.get(url, params=params)
+        inv_data = response.get("response", {}).get("result", {}).get("invoice", {})
 
-            if not inv_data:
-                return None
-
-            lines = []
-            for line in inv_data.get("lines", []):
-                lines.append(InvoiceLine(
-                    lineid=line.get("lineid"),
-                    name=line.get("name"),
-                    description=line.get("description"),
-                    qty=Decimal(str(line.get("qty", 1))),
-                    unit_cost=Decimal(str(line["unit_cost"]["amount"])) if line.get("unit_cost") else None,
-                    amount=Decimal(str(line["amount"]["amount"])) if line.get("amount") else None,
-                    type=line.get("type", 0),
-                ))
-
-            payments = []
-            for pay in inv_data.get("payments", []):
-                payments.append(Payment(
-                    paymentid=pay["paymentid"],
-                    invoiceid=pay["invoiceid"],
-                    amount=Decimal(str(pay["amount"]["amount"])) if isinstance(pay.get("amount"), dict) else Decimal(str(pay.get("amount", 0))),
-                    date=pay.get("date", ""),
-                    type=pay.get("type"),
-                    note=pay.get("note"),
-                    gateway=pay.get("gateway"),
-                ))
-
-            amount_val = None
-            if inv_data.get("amount"):
-                if isinstance(inv_data["amount"], dict):
-                    amount_val = Decimal(str(inv_data["amount"]["amount"]))
-                else:
-                    amount_val = Decimal(str(inv_data["amount"]))
-
-            paid_val = None
-            if inv_data.get("paid"):
-                if isinstance(inv_data["paid"], dict):
-                    paid_val = Decimal(str(inv_data["paid"]["amount"]))
-                else:
-                    paid_val = Decimal(str(inv_data["paid"]))
-
-            outstanding_val = None
-            if inv_data.get("outstanding"):
-                if isinstance(inv_data["outstanding"], dict):
-                    outstanding_val = Decimal(str(inv_data["outstanding"]["amount"]))
-                else:
-                    outstanding_val = Decimal(str(inv_data["outstanding"]))
-
-            return Invoice(
-                invoiceid=inv_data["invoiceid"],
-                invoice_number=inv_data.get("invoice_number"),
-                customerid=inv_data["customerid"],
-                create_date=inv_data.get("create_date", ""),
-                due_date=inv_data.get("due_date"),
-                currency_code=inv_data.get("currency_code", "USD"),
-                status=inv_data.get("status", 1),
-                v3_status=inv_data.get("v3_status"),
-                amount=amount_val,
-                paid=paid_val,
-                outstanding=outstanding_val,
-                fname=inv_data.get("fname"),
-                lname=inv_data.get("lname"),
-                organization=inv_data.get("organization"),
-                lines=lines,
-                payments=payments,
-            )
-        except Exception:
+        if not inv_data:
             return None
+
+        lines = []
+        for line in inv_data.get("lines", []):
+            lines.append(InvoiceLine(
+                lineid=line.get("lineid"),
+                name=line.get("name"),
+                description=line.get("description"),
+                qty=Decimal(str(line.get("qty", 1))),
+                unit_cost=Decimal(str(line["unit_cost"]["amount"])) if line.get("unit_cost") else None,
+                amount=Decimal(str(line["amount"]["amount"])) if line.get("amount") else None,
+                type=line.get("type", 0),
+            ))
+
+        payments = []
+        for pay in inv_data.get("payments", []):
+            payments.append(Payment(
+                paymentid=pay["paymentid"],
+                invoiceid=pay["invoiceid"],
+                amount=Decimal(str(pay["amount"]["amount"])) if isinstance(pay.get("amount"), dict) else Decimal(str(pay.get("amount", 0))),
+                date=pay.get("date", ""),
+                type=pay.get("type"),
+                note=pay.get("note"),
+                gateway=pay.get("gateway"),
+            ))
+
+        amount_val = None
+        if inv_data.get("amount"):
+            if isinstance(inv_data["amount"], dict):
+                amount_val = Decimal(str(inv_data["amount"]["amount"]))
+            else:
+                amount_val = Decimal(str(inv_data["amount"]))
+
+        paid_val = None
+        if inv_data.get("paid"):
+            if isinstance(inv_data["paid"], dict):
+                paid_val = Decimal(str(inv_data["paid"]["amount"]))
+            else:
+                paid_val = Decimal(str(inv_data["paid"]))
+
+        outstanding_val = None
+        if inv_data.get("outstanding"):
+            if isinstance(inv_data["outstanding"], dict):
+                outstanding_val = Decimal(str(inv_data["outstanding"]["amount"]))
+            else:
+                outstanding_val = Decimal(str(inv_data["outstanding"]))
+
+        return Invoice(
+            invoiceid=inv_data["invoiceid"],
+            invoice_number=inv_data.get("invoice_number"),
+            customerid=inv_data["customerid"],
+            create_date=inv_data.get("create_date", ""),
+            due_date=inv_data.get("due_date"),
+            currency_code=inv_data.get("currency_code", "USD"),
+            status=inv_data.get("status", 1),
+            v3_status=inv_data.get("v3_status"),
+            amount=amount_val,
+            paid=paid_val,
+            outstanding=outstanding_val,
+            fname=inv_data.get("fname"),
+            lname=inv_data.get("lname"),
+            organization=inv_data.get("organization"),
+            lines=lines,
+            payments=payments,
+        )
 
     def list_clients(self, refresh: bool = False) -> list[Client]:
         """List all clients."""

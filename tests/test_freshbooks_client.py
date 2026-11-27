@@ -1,6 +1,8 @@
 """Unit tests for FreshBooksClient error handling."""
 
+import json
 import re
+from pathlib import Path
 from unittest.mock import patch
 
 import httpx
@@ -103,3 +105,18 @@ class TestErrorHandling:
                 client.get("https://api.freshbooks.com/test/endpoint")
 
             assert "timed out" in str(exc_info.value).lower()
+
+
+ERROR_MESSAGES = json.loads((Path(__file__).parent / "fixtures" / "api_error_messages.json").read_text())
+
+
+@pytest.mark.parametrize("case", ERROR_MESSAGES, ids=[c["id"] for c in ERROR_MESSAGES])
+def test_api_error_shows_freshbooks_message(httpx_mock, mock_config, case):
+    reply = {"json": case["body"]} if "body" in case else {"text": case["text"]}
+    httpx_mock.add_response(url=re.compile(r".*"), status_code=case["status"], **reply)
+
+    with FreshBooksClient(mock_config) as client:
+        with pytest.raises(APIResponseError) as exc_info:
+            client.get("https://api.freshbooks.com/test/endpoint")
+
+    assert str(exc_info.value) == case["message"]
